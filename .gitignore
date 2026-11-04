@@ -1,0 +1,28 @@
+# ===== 敏感信息 =====
+# 真实环境变量（含 MySQL / Redis / RabbitMQ / MinIO 密码）
+.env
+.env.*
+!.env.example
+
+# 本地配置覆盖
+application-local.yml
+application-local.yaml
+
+# ===== 日志 =====
+*.log
+
+# ===== 构建产物 =====
+target/
+build/
+out/
+*.class
+
+# ===== 本地私有文档 =====
+# 会话交接文档包含本机路径，不随仓库分发
+HANDOFF.md
+
+# ===== IDE / 系统 =====
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

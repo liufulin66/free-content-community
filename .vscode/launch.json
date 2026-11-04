@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "FreeContentApplication",
+      "request": "launch",
+      "mainClass": "com.freecontent.community.FreeContentApplication",
+      "projectName": "free-content-community",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/infra/.env",
+      "console": "integratedTerminal"
+    }
+  ]
+}
