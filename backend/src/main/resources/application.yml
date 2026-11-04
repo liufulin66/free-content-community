@@ -27,6 +27,14 @@ spring:
     password: ${RABBITMQ_PASSWORD}
     connection-timeout: 5s
 
+  mail:
+    host: ${MAIL_HOST:127.0.0.1}
+    port: ${MAIL_PORT:1025}
+    default-encoding: UTF-8
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -34,7 +42,10 @@ spring:
 
   jackson:
     time-zone: UTC
-    default-property-inclusion: non_null
+    # 契约要求拒绝未定义字段；同时不要全局忽略 null，
+    # 因为 nextCursor 等字段在契约中是 required + nullable。
+    deserialization:
+      fail-on-unknown-properties: true
 
 mybatis-plus:
   configuration:
@@ -43,6 +54,23 @@ mybatis-plus:
     db-config:
       # 契约为不透明字符串 ID，使用 32 位 UUID 字符串，避免 Long 被前端当 Number
       id-type: assign_uuid
+
+app:
+  cors:
+    # 多个来源用逗号分隔；前端开发地址不同时通过 CORS_ALLOWED_ORIGINS 覆盖
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  storage:
+    endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+    access-key: ${MINIO_ROOT_USER}
+    secret-key: ${MINIO_ROOT_PASSWORD}
+    bucket: ${MINIO_BUCKET:free-content}
+    presign-ttl: 10m
+    max-image-bytes: 10485760
+    allowed-image-types:
+      - image/jpeg
+      - image/png
+      - image/webp
+      - image/gif
 
 springdoc:
   api-docs:
@@ -70,3 +98,6 @@ server:
 logging:
   level:
     com.freecontent.community: INFO
+  pattern:
+    # 把 RequestIdFilter 写入 MDC 的 requestId 带进日志，便于串联请求、审计和任务
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%X{requestId:-no-request}] %logger{36} - %msg%n"

@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.18</mybatis-plus.version>
         <springdoc.version>3.1.1</springdoc.version>
+        <minio.version>9.0.4</minio.version>
     </properties>
 
     <dependencies>
@@ -48,6 +49,25 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- 发送邮箱验证码，开发环境指向 Mailpit -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- 只使用 BCrypt/Argon2id 等密码散列工具，不启用 Spring Security 过滤器链 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!-- MinIO Java SDK：预签名上传/下载与对象元数据校验 -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
         </dependency>
 
         <!-- Spring Boot 4 专用 starter，不能用 Boot 2/3 的 mybatis-plus-boot-starter -->
@@ -93,6 +113,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Boot 4 把 WebMvc 测试切片拆成独立模块，@WebMvcTest 需要它 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
