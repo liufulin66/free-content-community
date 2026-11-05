@@ -95,3 +95,56 @@ backend/
 2. 接入 Redis 不透明 Token 会话、限流、幂等表；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
+
+## 邮箱验证码接口
+
+已实现 `POST /api/v1/auth/email-challenges`，无需登录：
+
+```json
+{
+  "purpose": "REGISTER",
+  "email": "creator@example.com"
+}
+```
+
+`purpose` 支持 `REGISTER` 和 `PASSWORD_RESET`。成功返回 HTTP 202，
+`data` 包含 `challengeId`、`expiresAt`、`resendAfter`，不返回验证码。
+202 表示挑战及邮件任务已经在同一个 MySQL 事务中保存，邮件由后台投递。
+本地邮件在 Mailpit 网页查看，默认地址为 <http://localhost:8025>。
+
+初始配置：有效期 600 秒、同邮箱同用途重发间隔 60 秒、邮箱每小时 5 次、
+连接来源每小时 100 次。邮箱次数跨用途共享；小时窗口从该计数首次申请开始。
+Redis Lua 原子检查配额，计数表示申请次数，数据库失败不自动退还配额。
+来源默认取 TCP 连接地址，不直接信任客户端传入的 `X-Forwarded-For`。
+经过反向代理时，需要按实际可信代理边界配置来源解析，避免所有访问共用代理IP配额。
+
+同邮箱同用途重发会在事务内让旧申请失效、取消旧待发送任务并建立新申请。
+已经发出的旧邮件无法撤回，但旧申请不能再完成验证。
+后台采用 MySQL 条件认领、60 秒租约和认领令牌，扫描间隔默认 1 秒。
+SMTP 默认最多尝试 3 次，失败按 5 秒、10 秒等间隔退避；任务过期或失效后停止投递。
+进程在 SMTP 接收成功但数据库回写前退出，可能导致同一验证码重复投递。
+所有终结任务会清理验证码密文；数据库租约恢复不依赖进程内队列。
+
+本地运行需要在已忽略的 `infra/.env` 中配置以下两个独立随机密钥：
+
+- `EMAIL_CHALLENGE_MAC_KEY_BASE64`：32 字节随机值的 Base64，用于 HMAC-SHA256。
+- `EMAIL_CHALLENGE_ENCRYPTION_KEY_BASE64`：另一个 32 字节随机值的 Base64，用于 AES-GCM。
+
+本次开发已为现有本地环境生成并保存密钥。通过 `run-local.ps1` 运行会读取该文件；
+通过 IDE 直接运行时，需要配置相同环境变量。密钥须在重启间保持稳定。
+当前实现使用单组带标识的密钥；更换前应处理完旧申请和任务，不能直接丢弃旧密钥。
+其他可调参数见 `application.yml` 的 `app.auth.email-challenge`。
+验证码申请表仅保存 HMAC 摘要，任务暂存绑定任务ID和申请ID的 AES-GCM 密文，
+原始验证码和密钥不进入接口响应或普通日志。
+
+普通测试与显式集成测试：
+
+```powershell
+# 不连接中间件的单元/Web测试
+mvn "-Dtest=GlobalExceptionHandlerTest,EmailChallengeControllerTest,EmailChallengeCryptoTest,EmailChallengeServiceTest,EmailChallengeWriterTest,EmailDeliveryWorkerTest" test
+
+# 先加载本地环境变量，再验证真实MySQL事务回滚
+mvn "-Dtest=EmailChallengeTransactionIT" test
+```
+
+该步骤只完成验证码申请及邮件投递；注册、登录和消费验证码接口在后续实现。

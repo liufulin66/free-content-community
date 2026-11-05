@@ -34,6 +34,9 @@ spring:
     properties:
       mail.smtp.auth: false
       mail.smtp.starttls.enable: false
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 
   flyway:
     enabled: true
@@ -56,6 +59,23 @@ mybatis-plus:
       id-type: assign_uuid
 
 app:
+  auth:
+    email-challenge:
+      ttl-seconds: ${EMAIL_CHALLENGE_TTL_SECONDS:600}
+      resend-interval-seconds: ${EMAIL_CHALLENGE_RESEND_INTERVAL_SECONDS:60}
+      email-hourly-limit: ${EMAIL_CHALLENGE_EMAIL_HOURLY_LIMIT:5}
+      ip-hourly-limit: ${EMAIL_CHALLENGE_IP_HOURLY_LIMIT:100}
+      max-delivery-attempts: ${EMAIL_CHALLENGE_MAX_DELIVERY_ATTEMPTS:3}
+      poll-delay-millis: ${EMAIL_CHALLENGE_POLL_DELAY_MILLIS:1000}
+      lease-seconds: ${EMAIL_CHALLENGE_LEASE_SECONDS:60}
+      retry-base-seconds: ${EMAIL_CHALLENGE_RETRY_BASE_SECONDS:5}
+      delivery-enabled: ${EMAIL_CHALLENGE_DELIVERY_ENABLED:true}
+      from-address: ${EMAIL_CHALLENGE_FROM_ADDRESS:no-reply@free-content.local}
+      mac-key-id: ${EMAIL_CHALLENGE_MAC_KEY_ID:v1}
+      mac-key-base64: ${EMAIL_CHALLENGE_MAC_KEY_BASE64:}
+      encryption-key-id: ${EMAIL_CHALLENGE_ENCRYPTION_KEY_ID:v1}
+      encryption-key-base64: ${EMAIL_CHALLENGE_ENCRYPTION_KEY_BASE64:}
+      redis-key-prefix: ${EMAIL_CHALLENGE_REDIS_KEY_PREFIX:fc:auth:}
   cors:
     # 多个来源用逗号分隔；前端开发地址不同时通过 CORS_ALLOWED_ORIGINS 覆盖
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}

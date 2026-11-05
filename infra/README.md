@@ -2,6 +2,8 @@
 
 P0 阶段所需的中间件，全部通过 Docker Compose 管理。
 
+本目录另有独立的 `docker-compose.web.yml` 与 `nginx/default.conf`，用于在 `127.0.0.1:8088` 提供前端静态文件并转发 Java API。推荐通过仓库根目录 `dev.ps1` 统一管理，操作见 [本地联调说明](../LOCAL-DEVELOPMENT.md)。原有 `docker-compose.yml` 的服务、端口和数据卷不变，普通中间件启动不会顺带启动 Nginx。
+
 ## 首次启动
 
 ```bash
