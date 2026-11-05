@@ -4,12 +4,17 @@ import com.freecontent.community.auth.dto.ChallengeReceipt;
 import com.freecontent.community.auth.dto.CreateEmailChallengeRequest;
 import com.freecontent.community.auth.model.EmailChallengePurpose;
 import com.freecontent.community.auth.service.EmailChallengeService;
+import com.freecontent.community.auth.service.LoginService;
+import com.freecontent.community.auth.service.RegistrationService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.context.annotation.Import;
+import com.freecontent.community.auth.config.SecurityConfiguration;
+import com.freecontent.community.auth.service.SessionAuthenticationService;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -21,8 +26,12 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(EmailChallengeController.class)
-class EmailChallengeControllerTest {
+@WebMvcTest(AuthController.class)
+@Import(SecurityConfiguration.class)
+class EmailChallengeEndpointTest {
+    @MockitoBean private SessionAuthenticationService authentication;
+    @MockitoBean private RegistrationService registrationService;
+    @MockitoBean private LoginService loginService;
 
     @Autowired
     private MockMvc mvc;

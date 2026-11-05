@@ -1,5 +1,12 @@
 package com.freecontent.community.auth.service.transaction;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.freecontent.community.auth.config.RegistrationProperties;
 import com.freecontent.community.auth.dto.RegisterRequest;
 import com.freecontent.community.auth.entity.EmailChallenge;
@@ -9,12 +16,6 @@ import com.freecontent.community.auth.model.EmailChallengePurpose;
 import com.freecontent.community.auth.security.EmailChallengeCrypto;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 /** 注册验证码校验与错码状态管理，负责提交失败次数和锁定状态。 */
 @Service
@@ -43,18 +44,21 @@ public class RegistrationVerificationService {
     public boolean verify(RegisterRequest request, String normalizedEmail) {
         EmailChallenge challenge = challenges.findByIdForUpdate(request.challengeId());
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+        // 验证码必须是活动状态、注册用途、邮箱匹配且未过期，否则直接返回false。
         if (challenge == null || challenge.getStatus() != EmailChallenge.Status.ACTIVE
                 || challenge.getPurpose() != EmailChallengePurpose.REGISTER
                 || !normalizedEmail.equals(challenge.getEmailNormalized())
                 || !challenge.getExpiresAt().isAfter(now)) {
             return false;
         }
+        // 错码次数达到上限时锁定验证码，取消后续投递任务，并返回false。
         int max = properties.maxCodeFailures();
         if (challenge.getFailedAttempts() >= max) {
             challenges.lockAtFailureLimit(challenge.getId(), max, now);
             tasks.cancelAfterVerification(challenge.getId(), "CHALLENGE_LOCKED", now);
             return false;
         }
+        // 验证码MAC校验失败时，记录失败次数，达到上限时锁定验证码并取消后续投递任务。
         if (!crypto.matches(challenge.getMacKeyId(), challenge.getCodeMac(), challenge.getId(),
                 normalizedEmail, EmailChallengePurpose.REGISTER, request.code())) {
             if (challenges.recordFailedAttempt(challenge.getId(), max, now) != 1) {

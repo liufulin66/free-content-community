@@ -1,6 +1,7 @@
 package com.freecontent.community.auth.service;
 
 import com.freecontent.community.auth.ratelimit.RegistrationRateLimiter;
+import com.freecontent.community.auth.service.impl.RegistrationServiceImpl;
 import com.freecontent.community.auth.service.transaction.RegistrationTransactionService;
 import com.freecontent.community.auth.service.transaction.RegistrationVerificationService;
 import com.freecontent.community.auth.dto.RegisterRequest;
@@ -19,7 +20,7 @@ class RegistrationServiceTest {
     private final RegistrationVerificationService verification = mock(RegistrationVerificationService.class);
     private final PasswordHasher hasher = mock(PasswordHasher.class);
     private final RegistrationTransactionService transactions = mock(RegistrationTransactionService.class);
-    private final RegistrationService service = new RegistrationService(limiter, verification, hasher, transactions);
+    private final RegistrationService service = new RegistrationServiceImpl(limiter, verification, hasher, transactions);
     private final RegisterRequest request = new RegisterRequest(" Creator@Example.test ",
             " RegistrationPassword! ", "challenge1", "123456", "创作者");
 

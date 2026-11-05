@@ -1,6 +1,7 @@
 package com.freecontent.community.auth.service;
 
 import com.freecontent.community.auth.ratelimit.EmailChallengeRateLimiter;
+import com.freecontent.community.auth.service.impl.EmailChallengeServiceImpl;
 import com.freecontent.community.auth.service.transaction.EmailChallengeTransactionService;
 import com.freecontent.community.auth.AuthTestSupport;
 import com.freecontent.community.auth.dto.CreateEmailChallengeRequest;
@@ -26,7 +27,7 @@ class EmailChallengeServiceTest {
     private final EmailChallengeRateLimiter limiter = mock(EmailChallengeRateLimiter.class);
     private final EmailChallengeTransactionService transactions = mock(EmailChallengeTransactionService.class);
     private final EmailChallengeCrypto crypto = new EmailChallengeCrypto(AuthTestSupport.properties());
-    private final EmailChallengeService service = new EmailChallengeService(
+    private final EmailChallengeService service = new EmailChallengeServiceImpl(
             limiter, crypto, transactions, AuthTestSupport.properties());
 
     @Test

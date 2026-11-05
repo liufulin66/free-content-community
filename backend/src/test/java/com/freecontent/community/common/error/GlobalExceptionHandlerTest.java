@@ -7,6 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,8 +33,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 验证错误响应与契约的字段、状态码和关键响应头一致。
  */
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class)
-@Import(GlobalExceptionHandlerTest.TestController.class)
+@Import({GlobalExceptionHandlerTest.TestController.class, GlobalExceptionHandlerTest.ErrorTestSecurity.class})
 class GlobalExceptionHandlerTest {
+    // 本切片只验证MVC异常转换，生产Bearer链由SessionEndpointTest单独覆盖。
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableWebSecurity
+    static class ErrorTestSecurity {
+        @Bean
+        SecurityFilterChain errorTestSecurity(HttpSecurity http) throws Exception {
+            return http.csrf(csrf -> csrf.disable())
+                    .authorizeHttpRequests(auth -> auth.anyRequest().permitAll()).build();
+        }
+    }
 
     @Autowired
     private MockMvc mockMvc;

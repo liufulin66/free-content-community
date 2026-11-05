@@ -27,6 +27,8 @@ class PasswordHasherTest {
         assertNotEquals(first, second);
         assertTrue(encoder.matches(password, first));
         assertFalse(encoder.matches(password.trim(), first));
+        assertTrue(hasher.matches(password, first));
+        assertFalse(hasher.matches(password.trim(), first));
     }
 
     @Test
@@ -60,6 +62,9 @@ class PasswordHasherTest {
             BusinessException error = assertThrows(BusinessException.class,
                     () -> hasher.encode("RegistrationPassword!"));
             assertEquals(ErrorCode.DEPENDENCY_UNAVAILABLE, error.errorCode());
+            BusinessException verificationBusy = assertThrows(BusinessException.class,
+                    () -> hasher.matches("RegistrationPassword!", "stored-hash"));
+            assertEquals(ErrorCode.DEPENDENCY_UNAVAILABLE, verificationBusy.errorCode());
             release.countDown();
             assertEquals("hash", first.get(5, TimeUnit.SECONDS));
             assertEquals("hash", hasher.encode("RegistrationPassword!"));

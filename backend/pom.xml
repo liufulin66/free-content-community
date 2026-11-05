@@ -65,10 +65,10 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
-        <!-- 只使用 BCrypt/Argon2id 等密码散列工具，不启用 Spring Security 过滤器链 -->
+        <!-- Bearer认证过滤器链；会话由业务代码存放Redis，不使用JWT或HttpSession -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-crypto</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!-- Argon2id底层实现；与当前MinIO间接依赖的版本保持一致 -->

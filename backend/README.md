@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请及邮箱注册，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录及Redis会话认证，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -58,6 +58,10 @@ mvn spring-boot:run
 后端按业务模块分包，模块内部按职责分层。完整目录、类职责和调用顺序见
 [后端结构与阅读指南](STRUCTURE.md)。
 
+验证码、注册和密码登录统一由`auth/controller/AuthController.java`提供HTTP入口，
+分别依赖EmailChallengeService、RegistrationService和LoginService接口，
+对应实现位于`auth/service/impl`下的三个`*ServiceImpl`类。
+
 ```text
 backend/
 ├── pom.xml
@@ -68,11 +72,13 @@ backend/
     │   │   ├── FreeContentApplication.java
     │   │   ├── auth/
     │   │   │   ├── controller/          # HTTP入口
-    │   │   │   ├── service/             # 验证码申请、注册两个主业务入口
+    │   │   │   ├── service/             # 验证码、注册、登录接口及会话认证组件
+    │   │   │   │   ├── impl/            # 三个业务接口的实现
     │   │   │   │   └── transaction/     # 写事务、验证码校验及错码状态管理
     │   │   │   ├── ratelimit/           # Redis限流
     │   │   │   ├── job/                 # 后台邮件投递
     │   │   │   ├── security/            # 密码哈希、验证码摘要及加密
+    │   │   │   ├── session/             # Redis会话签发、查询及数量限制
     │   │   │   ├── config/              # 认证配置及参数
     │   │   │   ├── dto/                 # 接口请求、回执
     │   │   │   ├── entity/              # 验证码及邮件任务实体
@@ -109,7 +115,7 @@ backend/
 
 ## 下一步
 
-1. 接入邮箱密码登录、退出与Redis不透明Token会话；
+1. 实现当前用户资料查询、退出当前会话及密码找回/修改；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -165,7 +171,7 @@ mvn "-Dtest=*Test" test
 mvn "-Dtest=EmailChallengeTransactionIT" test
 ```
 
-当前已完成验证码申请、邮件投递和邮箱验证码注册；登录和密码找回继续分步实现。
+当前已完成验证码申请、邮件投递、邮箱验证码注册及密码登录；密码找回继续分步实现。
 
 ## 邮箱验证码注册
 
@@ -215,3 +221,62 @@ mvn "-Dtest=*Test" test
 $env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
 mvn "-Dtest=*Test,*Tests,*IT" test
 ```
+
+## 密码登录与Redis会话
+
+`POST /api/v1/auth/sessions`为公开接口，输入邮箱、密码及可选的设备名称：
+
+```json
+{
+  "email": "creator@example.com",
+  "password": "ExampleRegistrationPassword!",
+  "deviceLabel": "开发浏览器"
+}
+```
+
+成功返回201，`data`为`accessToken、tokenType=Bearer、expiresAt、sessionId、user`。
+注册后仍须单独登录。登录密码长度为1～128个Unicode字符；邮箱沿用注册的trim和
+大小写不敏感匹配，密码原样参与Argon2id校验，不trim、不截断。deviceLabel最多80个字符，
+仅用于显示，不作为设备身份或权限依据。请求和签发结果的toString不输出凭证。
+
+邮箱不存在和密码错误统一401 `AUTHENTICATION_FAILED`；未知邮箱执行虚拟哈希校验。
+密码校验与注册编码共用最多2个计算名额。密码正确后再判断邮箱验证和账号状态，
+未验证邮箱返回403 `EMAIL_VERIFICATION_REQUIRED`，禁用账号返回403 `ACCOUNT_RESTRICTED`。
+WRITE_BLOCKED允许登录、阅读及账号安全操作，canCreate=false，业务写入返回403。
+
+默认策略均在`app.auth.login`配置：
+
+| 配置 | 默认值 | 语义 |
+| --- | --- | --- |
+| ttl-seconds / LOGIN_TTL_SECONDS | 86400 | 每次密码登录成功签发独立的24小时会话，读取不续期 |
+| max-sessions / LOGIN_MAX_SESSIONS | 5 | 每账号最多5个有效会话，超限撤销最早创建的会话 |
+| ip-per-minute-limit / LOGIN_IP_PER_MINUTE_LIMIT | 30 | 同TCP连接来源每分钟进入登录业务的次数 |
+| email-window-limit / LOGIN_EMAIL_WINDOW_LIMIT | 10 | 同规范化邮箱在窗口内的登录尝试次数 |
+| email-window-seconds / LOGIN_EMAIL_WINDOW_SECONDS | 900 | 邮箱计数窗口15分钟，从首次获准尝试开始 |
+| redis-key-prefix / LOGIN_REDIS_KEY_PREFIX | fc:auth: | Redis登录配额和会话键的前缀 |
+
+限流在数据库查询和密码计算之前执行，所有获准尝试均计数，包括错误密码与未知邮箱。
+超限429附Retry-After；Redis/MySQL故障或无法确认写入结果返回503，不签发无法确认的凭证。
+来源不直接信任X-Forwarded-For；部署代理时需按真实可信代理边界调整来源解析。
+
+Token由32字节安全随机数生成，原文只在登录响应中返回；Redis键使用SHA-256摘要，
+会话保存sessionId、userId、authVersion、创建/过期/活动时间和设备说明。
+Lua原子维护会话及用户索引、清理失效项和淘汰最早会话。索引丢失时孤立会话不能继续认证。
+所有会话相关键使用同一个`{sessions}`槽标记，适配当前单Redis部署；不跨MySQL和Redis承诺事务回滚。
+
+受保护请求携带`Authorization: Bearer <accessToken>`。Spring Security过滤器链不启用
+HttpSession、表单登录、HTTP Basic或Cookie认证；公开认证入口不校验客户端残留的Bearer。
+认证会核对Redis会话及MySQL当前账号、角色、authVersion，失效会话返回401
+`AUTHENTICATION_REQUIRED`。错误沿用Problem Details、requestId和no-store规范。
+Bearer由客户端显式发送，因此本方案不启用Cookie认证所需的CSRF机制；CORS继续使用来源白名单。
+
+V4迁移只给既有app_user增加auth_version，默认1，保留原有账号及数据，独立于资料version。
+未来改密、找回和禁用账号的数据库事务必须递增auth_version，并执行相应会话清理；
+认证版本核对保证旧凭证不会因清理与登录并发而继续有效，但不会撤回已经通过认证的在途请求。
+
+本次未实现GET /api/v1/me、退出、改密或P1会话管理接口；浏览器Token保存方式留到前端对接时确认。
+后续新增公开/可选认证和后台接口时，须按契约补充Security规则及资源归属检查。
+
+2026-11-05验证：全部81项测试通过，包括真实HTTP登录、MySQL V4迁移、Redis并发创建上限、
+最早会话淘汰、不续期、认证版本失效、角色即时复核及登录限流。
+集成测试关闭邮件后台投递，只清理自身唯一前缀与账号，不停止中间件、不清空数据库。

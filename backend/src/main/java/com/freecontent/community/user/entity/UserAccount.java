@@ -26,6 +26,7 @@ public class UserAccount {
     private String avatarAssetId;
     private Status accountStatus;
     private Integer version;
+    private Long authVersion = 1L;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

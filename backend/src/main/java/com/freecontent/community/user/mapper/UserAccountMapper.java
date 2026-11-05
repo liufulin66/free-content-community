@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Select;
 public interface UserAccountMapper extends BaseMapper<UserAccount> {
     @Select("""
             SELECT id, email, email_normalized, password_hash, email_verified, email_verified_at,
-                   display_name, bio, avatar_asset_id, account_status, version, created_at, updated_at
+                   display_name, bio, avatar_asset_id, account_status, version, auth_version, created_at, updated_at
             FROM app_user WHERE email_normalized = #{email}
             """)
     UserAccount findByEmail(@Param("email") String email);
