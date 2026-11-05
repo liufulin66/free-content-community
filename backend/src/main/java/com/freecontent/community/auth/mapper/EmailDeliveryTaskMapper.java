@@ -26,6 +26,16 @@ public interface EmailDeliveryTaskMapper extends BaseMapper<EmailDeliveryTask> {
     int cancelForChallenge(@Param("challengeId") String challengeId,
                            @Param("now") LocalDateTime now);
 
+    @Update("""
+            UPDATE email_delivery_task
+            SET status = 'CANCELLED', code_ciphertext = NULL, encryption_iv = NULL,
+                encryption_key_id = NULL, lease_token = NULL, lease_until = NULL,
+                last_error_code = #{reason}, updated_at = #{now}
+            WHERE challenge_id = #{challengeId} AND status IN ('PENDING', 'RETRY', 'SENDING')
+            """)
+    int cancelAfterVerification(@Param("challengeId") String challengeId,
+                                @Param("reason") String reason, @Param("now") LocalDateTime now);
+
     @Select("""
             SELECT id FROM email_delivery_task
             WHERE (status IN ('PENDING', 'RETRY') AND next_attempt_at <= #{now})

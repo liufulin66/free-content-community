@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.job;
 
 import com.freecontent.community.auth.AuthTestSupport;
 import com.freecontent.community.auth.entity.EmailChallenge;

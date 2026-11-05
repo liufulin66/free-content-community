@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.service.transaction;
 
 import com.freecontent.community.auth.entity.EmailChallenge;
 import com.freecontent.community.auth.entity.EmailDeliveryTask;
@@ -18,12 +18,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-class EmailChallengeWriterTest {
+class EmailChallengeTransactionServiceTest {
 
     private final EmailChallengeMapper challenges = mock(EmailChallengeMapper.class);
     private final EmailDeliveryTaskMapper tasks = mock(EmailDeliveryTaskMapper.class);
     private final Instant now = Instant.parse("2026-11-05T00:02:00Z");
-    private final EmailChallengeWriter writer = new EmailChallengeWriter(
+    private final EmailChallengeTransactionService transactions = new EmailChallengeTransactionService(
             challenges, tasks, Clock.fixed(now, ZoneOffset.UTC));
 
     @Test
@@ -33,7 +33,7 @@ class EmailChallengeWriterTest {
         when(challenges.findActiveForUpdate("a@example.test", EmailChallengePurpose.REGISTER))
                 .thenReturn(newer);
         BusinessException error = assertThrows(BusinessException.class,
-                () -> writer.save(older, new EmailDeliveryTask()));
+                () -> transactions.save(older, new EmailDeliveryTask()));
         assertEquals(ErrorCode.RATE_LIMITED, error.errorCode());
         verify(challenges, never()).invalidate(anyString(), any());
         verifyNoInteractions(tasks);
@@ -49,7 +49,7 @@ class EmailChallengeWriterTest {
         when(challenges.invalidate(eq("old"), any())).thenReturn(1);
         when(challenges.insert(next)).thenReturn(1);
         when(tasks.insert(task)).thenReturn(1);
-        writer.save(next, task);
+        transactions.save(next, task);
         verify(tasks).cancelForChallenge(eq("old"), any());
         verify(challenges).insert(next);
         verify(tasks).insert(task);

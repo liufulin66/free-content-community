@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.ratelimit;
 
 import com.freecontent.community.auth.config.EmailChallengeProperties;
 import com.freecontent.community.auth.model.EmailChallengePurpose;

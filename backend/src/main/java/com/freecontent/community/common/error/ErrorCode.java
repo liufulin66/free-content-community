@@ -23,13 +23,13 @@ public enum ErrorCode {
     PERMISSION_DENIED(HttpStatus.FORBIDDEN, "权限不足"),
     ACCOUNT_RESTRICTED(HttpStatus.FORBIDDEN, "账号受限"),
     EMAIL_VERIFICATION_REQUIRED(HttpStatus.FORBIDDEN, "需要先验证邮箱"),
-    REGISTRATION_NOT_ALLOWED(HttpStatus.FORBIDDEN, "当前不允许注册"),
 
     // 404 / 405
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "资源不存在"),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "请求方法不支持"),
 
     // 409
+    REGISTRATION_NOT_ALLOWED(HttpStatus.CONFLICT, "当前不允许注册"),
     CONTENT_VERSION_CONFLICT(HttpStatus.CONFLICT, "内容版本冲突"),
     RESOURCE_VERSION_CONFLICT(HttpStatus.CONFLICT, "资源版本冲突"),
     REVIEW_VERSION_CONFLICT(HttpStatus.CONFLICT, "审核版本冲突"),

@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.job;
 
 import com.freecontent.community.auth.config.EmailChallengeProperties;
 import com.freecontent.community.auth.entity.EmailChallenge;

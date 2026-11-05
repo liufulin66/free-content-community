@@ -33,4 +33,38 @@ public interface EmailChallengeMapper extends BaseMapper<EmailChallenge> {
             WHERE id = #{id} AND status = 'ACTIVE'
             """)
     int invalidate(@Param("id") String id, @Param("now") LocalDateTime now);
+
+    @Select("""
+            SELECT id, email_normalized, delivery_email, purpose, code_mac, mac_key_id,
+                   status, failed_attempts, expires_at, resend_after, consumed_at,
+                   invalidated_at, created_at, updated_at
+            FROM email_challenge WHERE id = #{id} FOR UPDATE
+            """)
+    EmailChallenge findByIdForUpdate(@Param("id") String id);
+
+    @Update("""
+            UPDATE email_challenge
+            SET status = CASE WHEN failed_attempts >= #{maxFailures} - 1 THEN 'LOCKED' ELSE 'ACTIVE' END,
+                failed_attempts = failed_attempts + 1, updated_at = #{now}
+            WHERE id = #{id} AND status = 'ACTIVE' AND expires_at > #{now}
+              AND failed_attempts < #{maxFailures}
+            """)
+    int recordFailedAttempt(@Param("id") String id, @Param("maxFailures") int maxFailures,
+                            @Param("now") LocalDateTime now);
+
+    @Update("""
+            UPDATE email_challenge SET status = 'LOCKED', updated_at = #{now}
+            WHERE id = #{id} AND status = 'ACTIVE' AND failed_attempts >= #{maxFailures}
+            """)
+    int lockAtFailureLimit(@Param("id") String id, @Param("maxFailures") int maxFailures,
+                           @Param("now") LocalDateTime now);
+
+    @Update("""
+            UPDATE email_challenge
+            SET status = 'CONSUMED', consumed_at = #{now}, updated_at = #{now}
+            WHERE id = #{id} AND status = 'ACTIVE' AND purpose = 'REGISTER'
+              AND expires_at > #{now} AND failed_attempts < #{maxFailures}
+            """)
+    int consumeRegistration(@Param("id") String id, @Param("maxFailures") int maxFailures,
+                            @Param("now") LocalDateTime now);
 }

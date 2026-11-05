@@ -60,6 +60,15 @@ mybatis-plus:
 
 app:
   auth:
+    registration:
+      max-code-failures: ${REGISTRATION_MAX_CODE_FAILURES:5}
+      ip-per-minute-limit: ${REGISTRATION_IP_PER_MINUTE_LIMIT:30}
+      email-hourly-limit: ${REGISTRATION_EMAIL_HOURLY_LIMIT:20}
+      argon2-memory-kib: ${REGISTRATION_ARGON2_MEMORY_KIB:19456}
+      argon2-iterations: ${REGISTRATION_ARGON2_ITERATIONS:2}
+      argon2-parallelism: ${REGISTRATION_ARGON2_PARALLELISM:1}
+      password-hash-concurrency: ${REGISTRATION_PASSWORD_HASH_CONCURRENCY:2}
+      redis-key-prefix: ${REGISTRATION_REDIS_KEY_PREFIX:fc:auth:}
     email-challenge:
       ttl-seconds: ${EMAIL_CHALLENGE_TTL_SECONDS:600}
       resend-interval-seconds: ${EMAIL_CHALLENGE_RESEND_INTERVAL_SECONDS:60}

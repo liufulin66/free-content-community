@@ -1,6 +1,7 @@
 package com.freecontent.community.auth;
 
 import com.freecontent.community.auth.config.EmailChallengeProperties;
+import com.freecontent.community.auth.config.RegistrationProperties;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -14,6 +15,10 @@ public final class AuthTestSupport {
         return new EmailChallengeProperties(600, 60, 5, 100,
                 3, 1000, 60, 5, true, "no-reply@example.test",
                 "v1", randomKey(), "v1", randomKey(), "test:auth:");
+    }
+
+    public static RegistrationProperties registrationProperties() {
+        return new RegistrationProperties(5, 30, 20, 19456, 2, 1, 2, "test:auth:");
     }
 
     private static String randomKey() {

@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 的后端骨架，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请及邮箱注册，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -55,6 +55,9 @@ mvn spring-boot:run
 
 ## 目录结构
 
+后端按业务模块分包，模块内部按职责分层。完整目录、类职责和调用顺序见
+[后端结构与阅读指南](STRUCTURE.md)。
+
 ```text
 backend/
 ├── pom.xml
@@ -63,13 +66,28 @@ backend/
     ├── main/
     │   ├── java/com/freecontent/community/
     │   │   ├── FreeContentApplication.java
+    │   │   ├── auth/
+    │   │   │   ├── controller/          # HTTP入口
+    │   │   │   ├── service/             # 验证码申请、注册两个主业务入口
+    │   │   │   │   └── transaction/     # 写事务、验证码校验及错码状态管理
+    │   │   │   ├── ratelimit/           # Redis限流
+    │   │   │   ├── job/                 # 后台邮件投递
+    │   │   │   ├── security/            # 密码哈希、验证码摘要及加密
+    │   │   │   ├── config/              # 认证配置及参数
+    │   │   │   ├── dto/                 # 接口请求、回执
+    │   │   │   ├── entity/              # 验证码及邮件任务实体
+    │   │   │   ├── mapper/              # 数据库访问
+    │   │   │   └── model/               # 验证码用途枚举
+    │   │   ├── user/                    # 用户资料、角色及其数据库访问
     │   │   ├── common/
     │   │   │   ├── api/        # ApiResponse、RequestIdFilter
-    │   │   │   └── error/      # RFC 9457 Problem Details
+    │   │   │   ├── error/      # RFC 9457 Problem Details
+    │   │   │   └── validation/ # 通用字段校验
     │   │   └── config/         # MyBatis-Plus、OpenAPI
     │   └── resources/
     │       ├── application.yml
-    │       └── db/migration/   # Flyway 脚本
+    │       ├── db/migration/   # Flyway 脚本
+    │       └── redis/          # Redis Lua脚本
     └── test/java/com/freecontent/community/
 ```
 
@@ -91,8 +109,8 @@ backend/
 
 ## 下一步
 
-1. 按 P0 契约建账号、内容、修订、审核、媒体等表和 Mapper；
-2. 接入 Redis 不透明 Token 会话、限流、幂等表；
+1. 接入邮箱密码登录、退出与Redis不透明Token会话；
+2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
 
@@ -141,10 +159,59 @@ SMTP 默认最多尝试 3 次，失败按 5 秒、10 秒等间隔退避；任务
 
 ```powershell
 # 不连接中间件的单元/Web测试
-mvn "-Dtest=GlobalExceptionHandlerTest,EmailChallengeControllerTest,EmailChallengeCryptoTest,EmailChallengeServiceTest,EmailChallengeWriterTest,EmailDeliveryWorkerTest" test
+mvn "-Dtest=*Test" test
 
 # 先加载本地环境变量，再验证真实MySQL事务回滚
 mvn "-Dtest=EmailChallengeTransactionIT" test
 ```
 
-该步骤只完成验证码申请及邮件投递；注册、登录和消费验证码接口在后续实现。
+当前已完成验证码申请、邮件投递和邮箱验证码注册；登录和密码找回继续分步实现。
+
+## 邮箱验证码注册
+
+接口为 `POST /api/v1/auth/registrations`，无需登录，使用 `REGISTER` 用途的申请：
+
+```json
+{
+  "email": "creator@example.com",
+  "password": "ExampleRegistrationPassword!",
+  "challengeId": "申请验证码接口返回的challengeId",
+  "code": "用户从邮件中读取的六位验证码",
+  "displayName": "创作者"
+}
+```
+
+成功返回 HTTP 201 和 `CurrentUser`：邮箱已验证，角色为 `USER`、
+账号状态为 `ACTIVE`、资料版本为 1，满足创作资格。注册不创建登录会话，
+响应不包含密码、验证码、密码哈希或 Token，也不设置登录 Cookie。
+
+服务先按来源和规范化邮箱限流，再验证挑战；只有正确验证码才进入密码哈希。
+密码计算使用 Spring Security Crypto 的 Argon2id 编码器和 Bouncy Castle 1.86，
+初始参数为 19 MiB 内存、2 次迭代、并行度 1、16 字节盐和32字节哈希。
+BC版本与当前MinIO间接依赖保持一致，并已显式声明。哈希带 `{argon2id}` 算法标识，
+默认最多同时执行两个密码编码任务，繁忙时返回503，避免密码计算耗尽内存。
+
+密码支持完整的 12～128 个Unicode字符，保留首尾空格，不做静默截断或Unicode规范化。
+昵称支持1～40个Unicode字符。长度校验按码点计算，不把一个补充平面字符误算为两个。
+请求对象的 `toString()` 隐去凭证，接口使用独立DTO返回账号资料。
+
+密码哈希在数据库事务之外计算；写事务重新锁定并校验挑战，创建账号和基础角色、
+消费验证码、取消未完成投递任务。任何中途数据库异常都会回滚整组变更。
+错码返回false先提交失败计数，再在事务外返回400 `CHALLENGE_INVALID`，
+默认第5次错误将该挑战锁定。不同邮箱、不同用途、过期或已消费的申请统一拒绝。
+规范化邮箱唯一索引保证不能重复创建账号；有效新验证码用于已有邮箱时返回409
+`REGISTRATION_NOT_ALLOWED`，不消费新验证码。并发使用同一申请最多一次成功。
+
+注册进入业务后的初始限额为来源每分钟30次、邮箱每小时20次，均可配置。
+来源使用TCP连接地址，与验证码申请接口使用相同的可信代理边界。
+配置在 `app.auth.registration`；新增表由 `V3__user_account_and_roles.sql` 管理。
+
+```powershell
+# 不连接中间件的单元/Web测试
+mvn "-Dtest=*Test" test
+
+# 加载infra/.env后运行全部测试（包括真实MySQL的事务、并发与错码锁定测试）
+# 验证时关闭后台投递，避免测试上下文处理其他待发送邮件
+$env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
+mvn "-Dtest=*Test,*Tests,*IT" test
+```

@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.service.transaction;
 
 import com.freecontent.community.auth.entity.EmailChallenge;
 import com.freecontent.community.auth.entity.EmailDeliveryTask;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class EmailChallengeTransactionIT {
 
     @Autowired
-    private EmailChallengeWriter writer;
+    private EmailChallengeTransactionService transactions;
 
     @Autowired
     private EmailChallengeMapper challenges;
@@ -46,7 +46,7 @@ class EmailChallengeTransactionIT {
             when(tasks.insert(any(EmailDeliveryTask.class)))
                     .thenThrow(new DataIntegrityViolationException("injected task persistence failure"));
             assertThrows(DataIntegrityViolationException.class,
-                    () -> writer.save(next, new EmailDeliveryTask()));
+                    () -> transactions.save(next, new EmailDeliveryTask()));
             assertNull(challenges.selectById(next.getId()), "新申请必须回滚");
             assertEquals(EmailChallenge.Status.ACTIVE,
                     challenges.selectById(old.getId()).getStatus(), "旧申请失效必须回滚");

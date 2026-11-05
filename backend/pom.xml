@@ -22,6 +22,7 @@
         <mybatis-plus.version>3.5.18</mybatis-plus.version>
         <springdoc.version>3.1.1</springdoc.version>
         <minio.version>9.0.4</minio.version>
+        <bouncycastle.version>1.86</bouncycastle.version>
     </properties>
 
     <dependencies>
@@ -68,6 +69,13 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!-- Argon2id底层实现；与当前MinIO间接依赖的版本保持一致 -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
         </dependency>
 
         <!-- MinIO Java SDK：预签名上传/下载与对象元数据校验 -->

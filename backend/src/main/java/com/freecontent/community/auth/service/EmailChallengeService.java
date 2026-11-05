@@ -16,7 +16,9 @@ import com.freecontent.community.auth.dto.ChallengeReceipt;
 import com.freecontent.community.auth.dto.CreateEmailChallengeRequest;
 import com.freecontent.community.auth.entity.EmailChallenge;
 import com.freecontent.community.auth.entity.EmailDeliveryTask;
+import com.freecontent.community.auth.ratelimit.EmailChallengeRateLimiter;
 import com.freecontent.community.auth.security.EmailChallengeCrypto;
+import com.freecontent.community.auth.service.transaction.EmailChallengeTransactionService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
 
@@ -25,14 +27,14 @@ public class EmailChallengeService {
 
     private final EmailChallengeRateLimiter limiter;
     private final EmailChallengeCrypto crypto;
-    private final EmailChallengeWriter writer;
+    private final EmailChallengeTransactionService transactions;
     private final EmailChallengeProperties properties;
 
     public EmailChallengeService(EmailChallengeRateLimiter limiter, EmailChallengeCrypto crypto,
-                                 EmailChallengeWriter writer, EmailChallengeProperties properties) {
+                                 EmailChallengeTransactionService transactions, EmailChallengeProperties properties) {
         this.limiter = limiter;
         this.crypto = crypto;
-        this.writer = writer;
+        this.transactions = transactions;
         this.properties = properties;
     }
 
@@ -82,7 +84,7 @@ public class EmailChallengeService {
         task.setCreatedAt(createdAt);
         task.setUpdatedAt(createdAt);
         try {
-            writer.save(challenge, task);
+            transactions.save(challenge, task);
         } catch (DuplicateKeyException ex) {
             throw new BusinessException(ErrorCode.RATE_LIMITED, "验证码申请发生并发竞争，请稍后重试",
                     null, properties.resendIntervalSeconds(), List.of());

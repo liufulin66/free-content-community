@@ -1,4 +1,4 @@
-package com.freecontent.community.auth.service;
+package com.freecontent.community.auth.service.transaction;
 
 import com.freecontent.community.auth.entity.EmailChallenge;
 import com.freecontent.community.auth.entity.EmailDeliveryTask;
@@ -20,13 +20,13 @@ import java.util.List;
  * SMTP、Redis和加密计算均在该数据库事务之外执行。
  */
 @Service
-public class EmailChallengeWriter {
+public class EmailChallengeTransactionService {
 
     private final EmailChallengeMapper challenges;
     private final EmailDeliveryTaskMapper tasks;
     private final Clock clock;
 
-    public EmailChallengeWriter(EmailChallengeMapper challenges, EmailDeliveryTaskMapper tasks, Clock clock) {
+    public EmailChallengeTransactionService(EmailChallengeMapper challenges, EmailDeliveryTaskMapper tasks, Clock clock) {
         this.challenges = challenges;
         this.tasks = tasks;
         this.clock = clock;

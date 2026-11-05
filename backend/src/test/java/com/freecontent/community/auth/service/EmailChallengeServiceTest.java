@@ -1,5 +1,7 @@
 package com.freecontent.community.auth.service;
 
+import com.freecontent.community.auth.ratelimit.EmailChallengeRateLimiter;
+import com.freecontent.community.auth.service.transaction.EmailChallengeTransactionService;
 import com.freecontent.community.auth.AuthTestSupport;
 import com.freecontent.community.auth.dto.CreateEmailChallengeRequest;
 import com.freecontent.community.auth.entity.EmailChallenge;
@@ -22,10 +24,10 @@ import static org.mockito.Mockito.*;
 class EmailChallengeServiceTest {
 
     private final EmailChallengeRateLimiter limiter = mock(EmailChallengeRateLimiter.class);
-    private final EmailChallengeWriter writer = mock(EmailChallengeWriter.class);
+    private final EmailChallengeTransactionService transactions = mock(EmailChallengeTransactionService.class);
     private final EmailChallengeCrypto crypto = new EmailChallengeCrypto(AuthTestSupport.properties());
     private final EmailChallengeService service = new EmailChallengeService(
-            limiter, crypto, writer, AuthTestSupport.properties());
+            limiter, crypto, transactions, AuthTestSupport.properties());
 
     @Test
     void normalizesIdentityButPreservesDeliveryAddressAndEncryptsCode() {
@@ -36,7 +38,7 @@ class EmailChallengeServiceTest {
                 EmailChallengePurpose.REGISTER, " Creator@Example.test "), "192.0.2.1");
         ArgumentCaptor<EmailChallenge> challenge = ArgumentCaptor.forClass(EmailChallenge.class);
         ArgumentCaptor<EmailDeliveryTask> task = ArgumentCaptor.forClass(EmailDeliveryTask.class);
-        verify(writer).save(challenge.capture(), task.capture());
+        verify(transactions).save(challenge.capture(), task.capture());
         assertEquals("creator@example.test", challenge.getValue().getEmailNormalized());
         assertEquals("Creator@Example.test", challenge.getValue().getDeliveryEmail());
         String code = crypto.decrypt(task.getValue().getEncryptionKeyId(), task.getValue().getId(),
@@ -51,7 +53,7 @@ class EmailChallengeServiceTest {
     void dependencyFailureCannotReturnAcceptedReceipt() {
         when(limiter.acquire(anyString(), any(), anyString())).thenReturn(Instant.now());
         doThrow(new DataAccessResourceFailureException("database unavailable"))
-                .when(writer).save(any(), any());
+                .when(transactions).save(any(), any());
         BusinessException error = assertThrows(BusinessException.class, () -> service.create(
                 new CreateEmailChallengeRequest(EmailChallengePurpose.REGISTER, "a@example.test"), "127.0.0.1"));
         assertEquals(ErrorCode.DEPENDENCY_UNAVAILABLE, error.errorCode());
