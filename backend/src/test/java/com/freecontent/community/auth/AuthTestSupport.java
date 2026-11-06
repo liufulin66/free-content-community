@@ -2,6 +2,7 @@ package com.freecontent.community.auth;
 
 import com.freecontent.community.auth.config.EmailChallengeProperties;
 import com.freecontent.community.auth.config.RegistrationProperties;
+import com.freecontent.community.auth.config.PasswordResetProperties;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -19,6 +20,10 @@ public final class AuthTestSupport {
 
     public static RegistrationProperties registrationProperties() {
         return new RegistrationProperties(5, 30, 20, 19456, 2, 1, 2, "test:auth:");
+    }
+
+    public static PasswordResetProperties passwordResetProperties() {
+        return new PasswordResetProperties(5, 30, 20, "test:auth:");
     }
 
     private static String randomKey() {

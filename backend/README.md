@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录及Redis会话认证，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密及Redis会话认证，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -58,9 +58,11 @@ mvn spring-boot:run
 后端按业务模块分包，模块内部按职责分层。完整目录、类职责和调用顺序见
 [后端结构与阅读指南](STRUCTURE.md)。
 
-验证码、注册和密码登录统一由`auth/controller/AuthController.java`提供HTTP入口，
-分别依赖EmailChallengeService、RegistrationService和LoginService接口，
-对应实现位于`auth/service/impl`下的三个`*ServiceImpl`类。
+验证码、注册、密码登录、退出和验证码重置密码统一由`auth/controller/AuthController.java`提供HTTP入口，
+分别依赖EmailChallengeService、RegistrationService、LoginService、LogoutService和PasswordResetService接口，
+当前账号资料查询和改密由`user/controller/MeController.java`提供入口，分别依赖CurrentUserService和PasswordChangeService接口。
+认证相关的五个接口及实现归`auth/service`；当前账号改密的DTO、Service、事务、限流和配置统一归`user`。
+后续业务代码遵循项目根目录[AGENTS.md](../AGENTS.md)中的业务结构约定。
 
 ```text
 backend/
@@ -73,7 +75,7 @@ backend/
     │   │   ├── auth/
     │   │   │   ├── controller/          # HTTP入口
     │   │   │   ├── service/             # 验证码、注册、登录接口及会话认证组件
-    │   │   │   │   ├── impl/            # 三个业务接口的实现
+    │   │   │   │   ├── impl/            # 五个认证业务接口的实现
     │   │   │   │   └── transaction/     # 写事务、验证码校验及错码状态管理
     │   │   │   ├── ratelimit/           # Redis限流
     │   │   │   ├── job/                 # 后台邮件投递
@@ -84,7 +86,14 @@ backend/
     │   │   │   ├── entity/              # 验证码及邮件任务实体
     │   │   │   ├── mapper/              # 数据库访问
     │   │   │   └── model/               # 验证码用途枚举
-    │   │   ├── user/                    # 用户资料、角色及其数据库访问
+    │   │   ├── user/                    # 当前账号业务、用户资料、角色及数据访问
+    │   │   │   ├── controller/          # MeController
+    │   │   │   ├── dto/                 # 改密请求及用户资料响应
+    │   │   │   ├── service/
+    │   │   │   │   ├── impl/            # 当前账号业务实现
+    │   │   │   │   └── transaction/     # 用户业务事务
+    │   │   │   ├── ratelimit/           # 用户业务限流
+    │   │   │   └── config/              # 用户业务配置
     │   │   ├── common/
     │   │   │   ├── api/        # ApiResponse、RequestIdFilter
     │   │   │   ├── error/      # RFC 9457 Problem Details
@@ -115,7 +124,7 @@ backend/
 
 ## 下一步
 
-1. 实现当前用户资料查询、退出当前会话及密码找回/修改；
+1. 实现当前账号资料编辑；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -171,7 +180,7 @@ mvn "-Dtest=*Test" test
 mvn "-Dtest=EmailChallengeTransactionIT" test
 ```
 
-当前已完成验证码申请、邮件投递、邮箱验证码注册及密码登录；密码找回继续分步实现。
+当前已完成验证码申请、邮件投递、邮箱验证码注册、密码登录、退出及验证码重置密码。
 
 ## 邮箱验证码注册
 
@@ -271,12 +280,117 @@ HttpSession、表单登录、HTTP Basic或Cookie认证；公开认证入口不�
 Bearer由客户端显式发送，因此本方案不启用Cookie认证所需的CSRF机制；CORS继续使用来源白名单。
 
 V4迁移只给既有app_user增加auth_version，默认1，保留原有账号及数据，独立于资料version。
-未来改密、找回和禁用账号的数据库事务必须递增auth_version，并执行相应会话清理；
+验证码重置和已登录改密均已在数据库事务中递增auth_version；后续禁用账号也必须递增，并执行相应会话清理；
 认证版本核对保证旧凭证不会因清理与登录并发而继续有效，但不会撤回已经通过认证的在途请求。
 
-本次未实现GET /api/v1/me、退出、改密或P1会话管理接口；浏览器Token保存方式留到前端对接时确认。
+当前已实现GET /api/v1/me，P1会话管理接口仍待实现；浏览器Token保存方式留到前端对接时确认。
 后续新增公开/可选认证和后台接口时，须按契约补充Security规则及资源归属检查。
 
 2026-11-05验证：全部81项测试通过，包括真实HTTP登录、MySQL V4迁移、Redis并发创建上限、
 最早会话淘汰、不续期、认证版本失效、角色即时复核及登录限流。
 集成测试关闭邮件后台投递，只清理自身唯一前缀与账号，不停止中间件、不清空数据库。
+
+## 退出当前会话
+
+`DELETE /api/v1/auth/sessions/current`需要有效的`Authorization: Bearer <accessToken>`，无请求体。
+成功返回204且无响应体，不使用data包装；前端清理本地Token与用户状态。
+已失效Token返回401 `AUTHENTICATION_REQUIRED`时，前端同样完成本地退出。
+
+认证过滤器先确认会话身份，内部SessionPrincipal保存Token摘要、会话ID及当前用户。
+LogoutServiceImpl调用RedisSessionStore.revoke，以Lua复核会话归属，原子删除当前会话Hash
+和用户会话ZSet中的对应摘要。最后一个成员移除后，Redis自动删除空索引。
+退出只撤销当前会话，不修改auth_version或资料version，其他设备继续登录；WRITE_BLOCKED允许退出。
+
+重复HTTP退出通常在认证阶段返回401。两个请求都已认证后并发退出时，后到的请求确认记录已不存在，
+清理残留索引后可返回204。Redis操作失败或结果无法确认返回503 `DEPENDENCY_UNAVAILABLE`，
+不能作为服务器退出成功处理。Lua在写入前检查索引类型，避免错误类型造成部分清理。
+退出不会撤回已通过认证的在途请求；后续旧Token请求被拒绝，活动时间更新也不会重新创建会话。
+
+2026-11-06验证：全部96项测试通过，新增真实HTTP退出、旧Token拒绝、保留其他会话、
+WRITE_BLOCKED退出、归属检查、索引清理及并发读取不恢复会话的验证；API文档声明Bearer和204空响应。
+
+## 验证码重置密码
+
+先调用`POST /api/v1/auth/email-challenges`，指定`purpose=PASSWORD_RESET`及账号邮箱。
+重置时调用公开接口`POST /api/v1/auth/password-resets`，提交email、challengeId、code、newPassword。
+challengeId使用发送接口返回的data.challengeId，code使用邮件中的真实六位验证码，不提交说明性占位文字。
+成功204且无响应体，不签发新Token；用户必须用新密码重新登录，之前的全部会话都已失效。
+
+邮箱使用与注册、登录相同的规范化规则。新密码12～128个Unicode字符，保留首尾空格，
+不截断、不规范化、不记录日志。验证码必须与邮箱及PASSWORD_RESET用途匹配，并处于有效、未消费且未锁定状态。
+错误、过期、重放、错邮箱或错用途统一400 CHALLENGE_INVALID。
+正确验证码对应的邮箱没有账号时，也消费挑战并返回204，不创建账号，避免通过响应探测账号是否存在。
+
+验证码预检查和最终写入之间不持有数据库事务，只有有效验证码才计算Argon2id哈希。
+最终事务再次锁定挑战和账号，在同一MySQL事务更新密码及auth_version、消费挑战、取消未完成邮件任务。
+发生异常时整组回滚；错码以false返回，让次数提交后再在事务外返回400。
+注册与重置共用EmailChallengeVerificationService，但用途由各自后端入口固定，不接受客户端覆盖。
+账号状态、角色、邮箱验证状态和资料version保持不变，重置密码不能解除DISABLED或WRITE_BLOCKED。
+
+重置事务提交后，认证链依据MySQL中的新auth_version拒绝全部旧Token。
+RedisSessionStore.revokeBeforeVersion只清理旧认证版本的会话，保留提交后新登录的会话。
+Redis物理清理失败时记录日志，仍返回204；旧会话已逻辑失效，残留由之后登录及TTL清理。
+MySQL写入提交前的依赖故障返回503，不能将MySQL和Redis当成同一个可回滚事务。
+
+app.auth.password-reset初始配置：
+
+| 配置 / 环境变量 | 默认值 |
+| --- | --- |
+| max-code-failures / PASSWORD_RESET_MAX_CODE_FAILURES | 每个挑战输错5次后锁定 |
+| ip-per-minute-limit / PASSWORD_RESET_IP_PER_MINUTE_LIMIT | 同来源每分钟30次 |
+| email-hourly-limit / PASSWORD_RESET_EMAIL_HOURLY_LIMIT | 同邮箱每小时20次 |
+| redis-key-prefix / PASSWORD_RESET_REDIS_KEY_PREFIX | fc:auth: |
+
+提交配额以独立的{password-reset}键空间计数，计数窗口从首次获准请求开始，超限429附Retry-After。
+来源取TCP连接地址，不直接信任X-Forwarded-For。验证码发送仍使用原有发送配额；会话清理沿用登录会话键空间。
+不新增数据表或迁移，复用现有挑战、邮件任务、账号和auth_version字段。
+
+2026-11-06验证：全部129项测试通过，覆盖真实HTTP申请挑战、重置、旧密码与旧Token拒绝、
+新密码登录、未知账号统一响应、错码锁定、状态保留、同挑战并发、事务回滚、
+Redis清理失败后的逻辑撤销、清理期间新登录保留，以及注册和退出流程回归。
+
+## 修改当前账号密码
+
+`PUT /api/v1/me/password`需要有效Bearer身份，JSON请求仅包含currentPassword和newPassword。
+目标用户由认证上下文确定，不接收客户端传入的userId或邮箱。两次新密码确认由前端比较，
+不增加confirmPassword字段；未知字段按现有规范拒绝。成功204且无响应体，不签发新Token，前端清理身份并引导重新登录。
+
+当前密码支持1～128个Unicode字符，新密码支持12～128个字符，原样参与Argon2id计算。
+旧密码使用PasswordHasher.matches校验，新密码使用encode生成带盐哈希，两者共享既有计算并发限制。
+旧密码错误返回401 AUTHENTICATION_FAILED，保留原密码与会话；前端应在表单提示，不作为会话失效处理。
+无效或过时身份返回401 AUTHENTICATION_REQUIRED；WRITE_BLOCKED允许账号安全操作，DISABLED拒绝访问。
+
+认证上下文携带认证时的authVersion。写事务锁定账号，再核对该版本、已验证的旧密码哈希和账号状态，
+随后原子更新password_hash与auth_version。若校验与写入之间发生了其他改密或找回，请求被拒绝，不覆盖新凭证。
+账号资料version、角色、邮箱验证状态与账号限制保持不变。成功后包括当前会话在内的全部旧Token失效。
+提交后复用旧版本会话清理；新登录会话保留，Redis清理失败记录日志仍返回204，旧Token仍因版本不匹配被拒绝。
+
+app.user.password-change配置为同来源每分钟30次、同用户每小时20次，采用独立{password-change}配额键。
+环境变量为PASSWORD_CHANGE_IP_PER_MINUTE_LIMIT、PASSWORD_CHANGE_USER_HOURLY_LIMIT和PASSWORD_CHANGE_REDIS_KEY_PREFIX。
+所有获准尝试均计数，包括错误旧密码，超限429附Retry-After；不会因此锁定账号。
+来源取TCP连接地址，不直接信任X-Forwarded-For。不新增表或迁移，复用现有账号与认证版本字段。
+
+当前账号改密的DTO、Service接口及实现、事务、限流、配置均在user模块，测试同样归user。
+密码哈希、认证上下文及会话存储继续复用auth的既有安全能力；不因技术复用改变用户业务归属。
+本次结构迁移保留接口及PASSWORD_CHANGE_*环境变量，Redis键名和计数语义保持不变。
+
+2026-11-06验证：全部153项测试通过，覆盖真实HTTP改密、旧密码错误时保留会话、全会话失效、
+新密码登录、状态限制、并发凭证变更保护、数据库写入失败、清理失败、新登录保留与独立限流；
+注册、登录、退出和验证码重置流程回归通过。
+
+## 获取当前用户资料
+
+`GET /api/v1/me`需要有效的`Authorization: Bearer <accessToken>`，无请求体，不使用客户端用户ID作为查询目标。
+成功200，统一包装为data、requestId、serverTime；data为已有CurrentUser契约，包含账号资料、当前角色、账号状态及canCreate。
+avatarAssetId为空时仍返回null。密码哈希、Token、Token摘要、sessionId和authVersion不进入响应。
+
+认证链先校验Redis会话，再读取MySQL当前账号和角色并核对认证版本与状态，构建本次请求的SessionPrincipal。
+MeController调用user模块的CurrentUserService，直接复用其中的CurrentUser，避免在同一次请求中再次查询数据库。
+后续请求会重新认证，资料和角色变动不会长期停留在登录时的快照。
+
+WRITE_BLOCKED允许查询，返回canCreate=false；DISABLED返回403 ACCOUNT_RESTRICTED。
+缺少、无效、过期、已撤销Token或认证版本过时返回401 AUTHENTICATION_REQUIRED；Redis/MySQL不可用返回503。
+响应使用Cache-Control: no-store，读取不修改资料version、auth_version，也不续期会话。
+
+2026-11-06验证：全部162项测试通过，新增真实HTTP当前用户查询、账号隔离、资料/角色更新、
+账号限制、过期/退出凭证拒绝、响应字段白名单及会话不续期验证；注册、登录、退出和两种改密流程回归通过。

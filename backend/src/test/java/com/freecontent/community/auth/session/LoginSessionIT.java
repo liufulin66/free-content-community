@@ -6,6 +6,8 @@ import com.freecontent.community.auth.ratelimit.LoginRateLimiter;
 import com.freecontent.community.auth.security.PasswordHasher;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.auth.security.TokenDigest;
+import com.freecontent.community.auth.service.LogoutService;
+import com.freecontent.community.auth.service.SessionAuthenticationService;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
@@ -44,6 +46,8 @@ class LoginSessionIT {
     @Autowired private UserRoleMapper roles;
     @Autowired private PasswordHasher passwords;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private LogoutService logoutService;
+    @Autowired private SessionAuthenticationService authentication;
     private final List<String> fixtureIds = new ArrayList<>();
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -208,6 +212,147 @@ class LoginSessionIT {
         assertEquals(ErrorCode.RATE_LIMITED, sourceError.errorCode());
         assertTrue(sourceError.retryAfterSeconds() > 0 && sourceError.retryAfterSeconds() <= 60);
         assertFalse(redis.hasKey(limitPrefix + "{login}:email:" + TokenDigest.sha256("new@example.test")));
+    }
+
+    @Test
+    void logoutRemovesCurrentSessionAndIndexWithoutAffectingOtherSessions() throws Exception {
+        UserAccount user = fixture();
+        HttpResponse<String> firstLogin = login(user.getEmail(), PASSWORD);
+        HttpResponse<String> secondLogin = login(user.getEmail(), PASSWORD);
+        assertEquals(201, firstLogin.statusCode());
+        assertEquals(201, secondLogin.statusCode());
+        String firstToken = JsonPath.read(firstLogin.body(), "$.data.accessToken");
+        String secondToken = JsonPath.read(secondLogin.body(), "$.data.accessToken");
+        String firstDigest = TokenDigest.sha256(firstToken);
+        String secondDigest = TokenDigest.sha256(secondToken);
+        String index = PREFIX + "{sessions}:user:" + user.getId();
+
+        HttpResponse<String> response = request("DELETE", "/api/v1/auth/sessions/current", firstToken);
+        assertEquals(204, response.statusCode());
+        assertEquals("", response.body());
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+        assertTrue(response.headers().firstValue("Set-Cookie").isEmpty());
+        assertFalse(redis.hasKey(PREFIX + "{sessions}:token:" + firstDigest));
+        assertNull(redis.opsForZSet().score(index, firstDigest));
+        assertNotNull(redis.opsForZSet().score(index, secondDigest));
+        assertNull(sessions.find(firstToken));
+        assertNotNull(sessions.find(secondToken));
+        assertEquals(401, request("GET", "/__login_it/me", firstToken).statusCode());
+        assertEquals(200, request("GET", "/__login_it/me", secondToken).statusCode());
+        assertEquals(401, request("DELETE", "/api/v1/auth/sessions/current", firstToken).statusCode());
+        assertEquals(1L, users.selectById(user.getId()).getAuthVersion());
+
+        HttpResponse<String> docs = request("GET", "/v3/api-docs", null);
+        assertEquals(200, docs.statusCode());
+        Map<String, Object> operation = JsonPath.read(docs.body(), "$.paths['/api/v1/auth/sessions/current'].delete");
+        assertEquals("deleteCurrentSession", operation.get("operationId"));
+        assertTrue(((Map<?, ?>) operation.get("responses")).containsKey("204"));
+        assertFalse(operation.containsKey("requestBody"));
+        assertTrue(!operation.containsKey("parameters") || ((List<?>) operation.get("parameters")).isEmpty());
+        assertTrue(((List<?>) operation.get("security")).stream()
+                .anyMatch(value -> ((Map<?, ?>) value).containsKey("bearerAuth")));
+    }
+
+    @Test
+    void writeBlockedAccountCanLogoutAndLastSessionIndexIsRemoved() throws Exception {
+        UserAccount user = fixture();
+        IssuedSession issued = sessions.create(user.getId(), 1, "write-blocked");
+        jdbc.update("UPDATE app_user SET account_status='WRITE_BLOCKED' WHERE id=?", user.getId());
+        assertEquals(204, request("DELETE", "/api/v1/auth/sessions/current", issued.accessToken()).statusCode());
+        assertNull(sessions.find(issued.accessToken()));
+        assertFalse(redis.hasKey(PREFIX + "{sessions}:user:" + user.getId()));
+        assertEquals(1L, users.selectById(user.getId()).getAuthVersion());
+    }
+
+    @Test
+    void wrongOwnerOrSessionCannotRevokeAnotherSession() {
+        UserAccount first = fixture();
+        UserAccount second = fixture();
+        IssuedSession issued = sessions.create(first.getId(), 1, "owner");
+        String digest = TokenDigest.sha256(issued.accessToken());
+        assertEquals(ErrorCode.AUTHENTICATION_REQUIRED, assertThrows(BusinessException.class,
+                () -> sessions.revoke(second.getId(), issued.session().sessionId(), digest)).errorCode());
+        assertEquals(ErrorCode.AUTHENTICATION_REQUIRED, assertThrows(BusinessException.class,
+                () -> sessions.revoke(first.getId(), "different-session", digest)).errorCode());
+        assertNotNull(sessions.find(issued.accessToken()));
+        assertNotNull(redis.opsForZSet().score(PREFIX + "{sessions}:user:" + first.getId(), digest));
+        assertFalse(redis.hasKey(PREFIX + "{sessions}:user:" + second.getId()));
+    }
+
+    @Test
+    void alreadyRemovedSessionCanFinishLogoutAndCleanItsIndex() {
+        UserAccount user = fixture();
+        IssuedSession issued = sessions.create(user.getId(), 1, "already-removed");
+        SessionPrincipal principal = authentication.authenticate(issued.accessToken());
+        String digest = TokenDigest.sha256(issued.accessToken());
+        redis.delete(PREFIX + "{sessions}:token:" + digest);
+        assertNotNull(redis.opsForZSet().score(PREFIX + "{sessions}:user:" + user.getId(), digest));
+        assertDoesNotThrow(() -> logoutService.logoutCurrentSession(principal));
+        assertDoesNotThrow(() -> logoutService.logoutCurrentSession(principal));
+        assertFalse(redis.hasKey(PREFIX + "{sessions}:user:" + user.getId()));
+        assertNull(sessions.find(issued.accessToken()));
+    }
+
+    @Test
+    void concurrentReadsCannotResurrectRevokedSession() throws Exception {
+        UserAccount user = fixture();
+        IssuedSession issued = sessions.create(user.getId(), 1, "read-race");
+        SessionPrincipal principal = authentication.authenticate(issued.accessToken());
+        ExecutorService pool = Executors.newFixedThreadPool(9);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> work = new ArrayList<>();
+        try {
+            for (int i = 0; i < 8; i++) work.add(pool.submit(() -> {
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                for (int read = 0; read < 20; read++) sessions.find(issued.accessToken());
+                return null;
+            }));
+            work.add(pool.submit(() -> {
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                logoutService.logoutCurrentSession(principal);
+                return null;
+            }));
+            start.countDown();
+            for (Future<?> future : work) future.get(10, TimeUnit.SECONDS);
+            assertNull(sessions.find(issued.accessToken()));
+            assertFalse(redis.hasKey(PREFIX + "{sessions}:token:" + TokenDigest.sha256(issued.accessToken())));
+            assertFalse(redis.hasKey(PREFIX + "{sessions}:user:" + user.getId()));
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void invalidIndexTypeReturns503BeforeDeletingSessionRecord() {
+        UserAccount user = fixture();
+        IssuedSession issued = sessions.create(user.getId(), 1, "invalid-index");
+        String digest = TokenDigest.sha256(issued.accessToken());
+        String index = PREFIX + "{sessions}:user:" + user.getId();
+        redis.opsForValue().set(index, "invalid-index");
+        assertEquals(ErrorCode.DEPENDENCY_UNAVAILABLE, assertThrows(BusinessException.class,
+                () -> sessions.revoke(user.getId(), issued.session().sessionId(), digest)).errorCode());
+        assertTrue(redis.hasKey(PREFIX + "{sessions}:token:" + digest));
+        assertEquals("invalid-index", redis.opsForValue().get(index));
+    }
+
+    @Test
+    void oldVersionCleanupKeepsSessionsCreatedAfterPasswordReset() {
+        UserAccount user = fixture();
+        IssuedSession old = sessions.create(user.getId(), 1, "before-reset");
+        IssuedSession fresh = sessions.create(user.getId(), 2, "after-reset");
+        assertEquals(0, sessions.revokeBeforeVersion(user.getId(), 2));
+        assertNull(sessions.find(old.accessToken()));
+        assertNotNull(sessions.find(fresh.accessToken()));
+    }
+
+    @Test
+    void versionCleanupPreservesBigintPrecision() {
+        UserAccount user = fixture();
+        long version = 9007199254740992L;
+        IssuedSession old = sessions.create(user.getId(), version, "large-version");
+        assertEquals(1, sessions.revokeBeforeVersion(user.getId(), version + 1));
+        assertNull(sessions.find(old.accessToken()));
     }
 
     private UserAccount fixture() {

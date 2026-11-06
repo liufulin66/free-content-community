@@ -4,6 +4,8 @@ import com.freecontent.community.auth.dto.RegisterRequest;
 import com.freecontent.community.auth.service.RegistrationService;
 import com.freecontent.community.auth.service.EmailChallengeService;
 import com.freecontent.community.auth.service.LoginService;
+import com.freecontent.community.auth.service.LogoutService;
+import com.freecontent.community.auth.service.PasswordResetService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
 import com.freecontent.community.user.dto.CurrentUser;
@@ -33,6 +35,8 @@ class RegistrationEndpointTest {
     @MockitoBean private SessionAuthenticationService authentication;
     @MockitoBean private EmailChallengeService emailChallengeService;
     @MockitoBean private LoginService loginService;
+    @MockitoBean private LogoutService logoutService;
+    @MockitoBean private PasswordResetService passwordResetService;
     @Autowired
     private MockMvc mvc;
     @MockitoBean

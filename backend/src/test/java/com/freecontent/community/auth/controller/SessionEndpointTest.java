@@ -4,6 +4,7 @@ import com.freecontent.community.auth.LoginTestSupport;
 import com.freecontent.community.auth.config.SecurityConfiguration;
 import com.freecontent.community.auth.dto.*;
 import com.freecontent.community.auth.security.SessionPrincipal;
+import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.auth.service.*;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.user.dto.CurrentUser;
@@ -33,6 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class SessionEndpointTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private LoginService service;
+    @MockitoBean private LogoutService logoutService;
+    @MockitoBean private PasswordResetService passwordResetService;
     @MockitoBean private EmailChallengeService emailChallengeService;
     @MockitoBean private RegistrationService registrationService;
     @MockitoBean private SessionAuthenticationService authentication;
@@ -134,14 +137,12 @@ class SessionEndpointTest {
     }
 
     @Test
-    void writeBlockedUserCanReadAndPerformSecurityActionsButCannotWriteBusinessData() throws Exception {
+    void writeBlockedUserCanReadButCannotWriteBusinessData() throws Exception {
         when(authentication.authenticate(TOKEN)).thenReturn(principal(true));
         mvc.perform(get("/api/v1/test/private").header("Authorization", "Bearer " + TOKEN))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.canCreate").value(false));
         mvc.perform(post("/api/v1/test/private").header("Authorization", "Bearer " + TOKEN))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("ACCOUNT_RESTRICTED"));
-        mvc.perform(put("/api/v1/me/password").header("Authorization", "Bearer " + TOKEN))
-                .andExpect(status().isNoContent());
     }
 
     @Test
@@ -153,6 +154,67 @@ class SessionEndpointTest {
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("DEPENDENCY_UNAVAILABLE"));
         mvc.perform(get("/api/v1/test/private").header("Authorization", "Bearer " + TOKEN))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void logoutReturnsEmpty204AndUsesAuthenticatedSession() throws Exception {
+        SessionPrincipal currentSession = principal(false);
+        when(authentication.authenticate(TOKEN)).thenReturn(currentSession);
+        mvc.perform(delete("/api/v1/auth/sessions/current").header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().exists("X-Request-Id"))
+                .andExpect(header().doesNotExist("Set-Cookie"));
+        verify(logoutService).logoutCurrentSession(currentSession);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void logoutWithoutBearerCannotReachService() throws Exception {
+        mvc.perform(delete("/api/v1/auth/sessions/current"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+        verifyNoInteractions(authentication, logoutService);
+    }
+
+    @Test
+    void expiredTokenCannotReachLogoutService() throws Exception {
+        when(authentication.authenticate(TOKEN)).thenThrow(new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        mvc.perform(delete("/api/v1/auth/sessions/current").header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+        verifyNoInteractions(logoutService);
+    }
+
+    @Test
+    void writeBlockedUserCanLogout() throws Exception {
+        SessionPrincipal currentSession = principal(true);
+        when(authentication.authenticate(TOKEN)).thenReturn(currentSession);
+        mvc.perform(delete("/api/v1/auth/sessions/current").header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isNoContent());
+        verify(logoutService).logoutCurrentSession(currentSession);
+    }
+
+    @Test
+    void unconfirmedRevocationReturns503InsteadOfSuccess() throws Exception {
+        when(authentication.authenticate(TOKEN)).thenReturn(principal(false));
+        doThrow(new BusinessException(ErrorCode.DEPENDENCY_UNAVAILABLE)).when(logoutService).logoutCurrentSession(any());
+        mvc.perform(delete("/api/v1/auth/sessions/current").header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.code").value("DEPENDENCY_UNAVAILABLE"));
+    }
+
+    @Test
+    void logoutCorsPreflightAllowsDeleteWithAuthorization() throws Exception {
+        mvc.perform(options("/api/v1/auth/sessions/current").header("Origin", "http://localhost:5173")
+                        .header("Access-Control-Request-Method", "DELETE")
+                        .header("Access-Control-Request-Headers", "Authorization"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
+        verifyNoInteractions(authentication, logoutService);
     }
 
     @Test
@@ -170,7 +232,7 @@ class SessionEndpointTest {
     private SessionPrincipal principal(boolean blocked) {
         UserAccount account = LoginTestSupport.account();
         if (blocked) account.setAccountStatus(UserAccount.Status.WRITE_BLOCKED);
-        return new SessionPrincipal("session1", CurrentUser.from(account, List.of(UserRole.USER)));
+        return new SessionPrincipal("session1", CurrentUser.from(account, List.of(UserRole.USER)), TokenDigest.sha256(TOKEN), 1L);
     }
 
     private String json(String password, String device) {
@@ -184,8 +246,5 @@ class SessionEndpointTest {
         CurrentUser read(@AuthenticationPrincipal SessionPrincipal principal) { return principal.user(); }
         @PostMapping("/api/v1/test/private")
         String write() { return "ok"; }
-        @PutMapping("/api/v1/me/password")
-        @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
-        void securityAction() { }
     }
 }

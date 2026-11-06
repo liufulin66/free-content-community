@@ -24,6 +24,8 @@ public class RedisSessionStore {
     private final SecureRandom random = new SecureRandom();
     private final DefaultRedisScript<Long> create;
     private final DefaultRedisScript<List> read;
+    private final DefaultRedisScript<Long> revoke;
+    private final DefaultRedisScript<Long> revokeBeforeVersion;
 
     public RedisSessionStore(StringRedisTemplate redis, LoginProperties properties, Clock clock) {
         this.redis = redis;
@@ -35,6 +37,12 @@ public class RedisSessionStore {
         read = new DefaultRedisScript<>();
         read.setLocation(new ClassPathResource("redis/session-read.lua"));
         read.setResultType(List.class);
+        revoke = new DefaultRedisScript<>();
+        revoke.setLocation(new ClassPathResource("redis/session-revoke.lua"));
+        revoke.setResultType(Long.class);
+        revokeBeforeVersion = new DefaultRedisScript<>();
+        revokeBeforeVersion.setLocation(new ClassPathResource("redis/session-revoke-before-version.lua"));
+        revokeBeforeVersion.setResultType(Long.class);
     }
 
     public IssuedSession create(String userId, long authVersion, String deviceLabel) {
@@ -78,6 +86,37 @@ public class RedisSessionStore {
                     Instant.ofEpochMilli(Long.parseLong((String) values.get(3))),
                     Instant.ofEpochMilli(Long.parseLong((String) values.get(4))), (String) values.get(5));
         } catch (DataAccessException | IllegalArgumentException ex) {
+            throw unavailable();
+        }
+    }
+
+    public void revoke(String userId, String sessionId, String tokenDigest) {
+        if (userId == null || !userId.matches("[A-Za-z0-9_-]{1,64}")
+                || sessionId == null || !sessionId.matches("[A-Za-z0-9_-]{1,64}")
+                || tokenDigest == null || !tokenDigest.matches("[a-f0-9]{64}")) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        try {
+            Long result = redis.execute(revoke,
+                    List.of(prefix() + "token:" + tokenDigest, prefix() + "user:" + userId),
+                    userId, sessionId, tokenDigest);
+            if (result == null) throw unavailable();
+            if (result == -1) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+            // 已通过认证、但并发退出或过期使记录先消失时，目标同样已被撤销。
+            if (result != 0 && result != 1) throw unavailable();
+        } catch (DataAccessException ex) {
+            throw unavailable();
+        }
+    }
+
+    public long revokeBeforeVersion(String userId, long authVersion) {
+        if (userId == null || !userId.matches("[A-Za-z0-9_-]{1,64}") || authVersion < 1) throw unavailable();
+        try {
+            Long result = redis.execute(revokeBeforeVersion, List.of(prefix() + "user:" + userId),
+                    prefix() + "token:", userId, Long.toString(authVersion));
+            if (result == null || result < 0) throw unavailable();
+            return result;
+        } catch (DataAccessException ex) {
             throw unavailable();
         }
     }

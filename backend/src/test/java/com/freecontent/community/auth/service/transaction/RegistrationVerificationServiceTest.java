@@ -25,8 +25,8 @@ class RegistrationVerificationServiceTest {
     private final EmailChallengeCrypto crypto = new EmailChallengeCrypto(AuthTestSupport.properties());
     private final Instant instant = Instant.parse("2026-11-05T00:00:00Z");
     private final RegistrationVerificationService verification = new RegistrationVerificationService(
-            challenges, tasks, crypto, AuthTestSupport.registrationProperties(),
-            Clock.fixed(instant, ZoneOffset.UTC));
+            new EmailChallengeVerificationService(challenges, tasks, crypto, Clock.fixed(instant, ZoneOffset.UTC)),
+            AuthTestSupport.registrationProperties());
     private final EmailChallenge challenge = new EmailChallenge();
     private final RegisterRequest request = new RegisterRequest("a@example.test",
             "RegistrationPassword!", "challenge1", "123456", "创作者");

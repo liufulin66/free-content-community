@@ -6,6 +6,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import com.freecontent.community.auth.security.SessionPrincipal;
+import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.auth.session.RedisSessionStore;
 import com.freecontent.community.auth.session.StoredSession;
 import com.freecontent.community.common.error.BusinessException;
@@ -45,7 +46,7 @@ public class SessionAuthenticationService {
                 throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED, "请先完成邮箱验证");
             }
             return new SessionPrincipal(session.sessionId(),
-                    CurrentUser.from(account, roles.findRoles(account.getId())));
+                    CurrentUser.from(account, roles.findRoles(account.getId())), TokenDigest.sha256(token), session.authVersion());
         } catch (DataAccessException ex) {
             throw new BusinessException(ErrorCode.DEPENDENCY_UNAVAILABLE, "账号认证服务暂不可用");
         }

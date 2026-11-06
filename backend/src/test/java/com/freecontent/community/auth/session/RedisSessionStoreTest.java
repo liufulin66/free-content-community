@@ -1,6 +1,7 @@
 package com.freecontent.community.auth.session;
 
 import com.freecontent.community.auth.LoginTestSupport;
+import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.common.error.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -24,17 +25,46 @@ class RedisSessionStoreTest {
     }
 
     @Test
-    void redisFailureIs503ForBothCreationAndAuthentication() {
+    void redisFailureIs503ForSessionOperations() {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenThrow(new RedisConnectionFailureException("internal connection detail"));
         assertUnavailable(() -> store.create("user1", 1, null));
         assertUnavailable(() -> store.find("a".repeat(43)));
+        assertUnavailable(() -> store.revoke("user1", "session1", TokenDigest.sha256("token")));
+        assertUnavailable(() -> store.revokeBeforeVersion("user1", 2));
     }
 
     @Test
     void unconfirmedRedisResultIsNotTreatedAsSuccessOrInvalidToken() {
         assertUnavailable(() -> store.create("user1", 1, null));
         assertUnavailable(() -> store.find("a".repeat(43)));
+        assertUnavailable(() -> store.revoke("user1", "session1", TokenDigest.sha256("token")));
+        assertUnavailable(() -> store.revokeBeforeVersion("user1", 2));
+    }
+
+    @Test
+    void invalidRevocationIdentityCannotReachRedis() {
+        for (String[] identity : new String[][] {
+                {"other:{user}", "session1", TokenDigest.sha256("token")},
+                {"user1", null, TokenDigest.sha256("token")},
+                {"user1", "session1", "raw-token"}}) {
+            assertEquals(ErrorCode.AUTHENTICATION_REQUIRED, assertThrows(BusinessException.class,
+                    () -> store.revoke(identity[0], identity[1], identity[2])).errorCode());
+        }
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void ownershipMismatchIsRejected() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(-1L);
+        assertEquals(ErrorCode.AUTHENTICATION_REQUIRED, assertThrows(BusinessException.class,
+                () -> store.revoke("user1", "session1", TokenDigest.sha256("token"))).errorCode());
+    }
+
+    @Test
+    void unexpectedScriptResultCannotConfirmRevocation() {
+        when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenReturn(2L);
+        assertUnavailable(() -> store.revoke("user1", "session1", TokenDigest.sha256("token")));
     }
 
     private void assertUnavailable(Runnable action) {

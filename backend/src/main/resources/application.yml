@@ -71,7 +71,17 @@ app:
       - image/png
       - image/webp
       - image/gif
+  user:
+    password-change:
+      ip-per-minute-limit: ${PASSWORD_CHANGE_IP_PER_MINUTE_LIMIT:30}
+      user-hourly-limit: ${PASSWORD_CHANGE_USER_HOURLY_LIMIT:20}
+      redis-key-prefix: ${PASSWORD_CHANGE_REDIS_KEY_PREFIX:fc:auth:}
   auth:
+    password-reset:
+      max-code-failures: ${PASSWORD_RESET_MAX_CODE_FAILURES:5}
+      ip-per-minute-limit: ${PASSWORD_RESET_IP_PER_MINUTE_LIMIT:30}
+      email-hourly-limit: ${PASSWORD_RESET_EMAIL_HOURLY_LIMIT:20}
+      redis-key-prefix: ${PASSWORD_RESET_REDIS_KEY_PREFIX:fc:auth:}
     registration:
       max-code-failures: ${REGISTRATION_MAX_CODE_FAILURES:5}
       ip-per-minute-limit: ${REGISTRATION_IP_PER_MINUTE_LIMIT:30}

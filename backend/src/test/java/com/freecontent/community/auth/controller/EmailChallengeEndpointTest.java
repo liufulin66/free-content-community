@@ -5,6 +5,8 @@ import com.freecontent.community.auth.dto.CreateEmailChallengeRequest;
 import com.freecontent.community.auth.model.EmailChallengePurpose;
 import com.freecontent.community.auth.service.EmailChallengeService;
 import com.freecontent.community.auth.service.LoginService;
+import com.freecontent.community.auth.service.LogoutService;
+import com.freecontent.community.auth.service.PasswordResetService;
 import com.freecontent.community.auth.service.RegistrationService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
@@ -32,6 +34,8 @@ class EmailChallengeEndpointTest {
     @MockitoBean private SessionAuthenticationService authentication;
     @MockitoBean private RegistrationService registrationService;
     @MockitoBean private LoginService loginService;
+    @MockitoBean private LogoutService logoutService;
+    @MockitoBean private PasswordResetService passwordResetService;
 
     @Autowired
     private MockMvc mvc;

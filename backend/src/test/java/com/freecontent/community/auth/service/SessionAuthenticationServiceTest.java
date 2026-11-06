@@ -1,6 +1,7 @@
 package com.freecontent.community.auth.service;
 
 import com.freecontent.community.auth.LoginTestSupport;
+import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.auth.session.*;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.user.entity.UserAccount;
@@ -24,7 +25,10 @@ class SessionAuthenticationServiceTest {
     void rolesAndWriteRestrictionsUseCurrentDatabaseState() {
         UserAccount account = fixture();
         when(roles.findRoles("user1")).thenReturn(List.of(UserRole.USER), List.of(UserRole.USER, UserRole.ADMIN));
-        assertEquals(List.of(UserRole.USER), service.authenticate("token").user().roles());
+        var principal = service.authenticate("token");
+        assertEquals(List.of(UserRole.USER), principal.user().roles());
+        assertEquals(TokenDigest.sha256("token"), principal.tokenDigest());
+        assertEquals(1L, principal.authVersion());
         assertTrue(service.authenticate("token").user().roles().contains(UserRole.ADMIN));
         account.setAccountStatus(UserAccount.Status.WRITE_BLOCKED);
         assertFalse(service.authenticate("token").user().canCreate());

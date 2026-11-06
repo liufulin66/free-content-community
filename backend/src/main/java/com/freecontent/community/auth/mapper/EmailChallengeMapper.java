@@ -62,9 +62,13 @@ public interface EmailChallengeMapper extends BaseMapper<EmailChallenge> {
     @Update("""
             UPDATE email_challenge
             SET status = 'CONSUMED', consumed_at = #{now}, updated_at = #{now}
-            WHERE id = #{id} AND status = 'ACTIVE' AND purpose = 'REGISTER'
+            WHERE id = #{id} AND status = 'ACTIVE' AND purpose = #{purpose}
               AND expires_at > #{now} AND failed_attempts < #{maxFailures}
             """)
-    int consumeRegistration(@Param("id") String id, @Param("maxFailures") int maxFailures,
-                            @Param("now") LocalDateTime now);
+    int consumeForPurpose(@Param("id") String id, @Param("purpose") EmailChallengePurpose purpose,
+                          @Param("maxFailures") int maxFailures, @Param("now") LocalDateTime now);
+
+    default int consumeRegistration(String id, int maxFailures, LocalDateTime now) {
+        return consumeForPurpose(id, EmailChallengePurpose.REGISTER, maxFailures, now);
+    }
 }
