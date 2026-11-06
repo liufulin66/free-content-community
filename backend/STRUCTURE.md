@@ -64,23 +64,35 @@ auth/
 └── model/
 ```
 
-当前账号资料查询与改密的业务代码集中在用户模块：
+当前账号资料查询、编辑与改密的业务代码集中在用户模块：
 
 ```text
 user/
 ├── controller/MeController.java
-├── dto/ChangePasswordRequest.java
+├── dto/
+│   ├── ChangePasswordRequest.java
+│   ├── CurrentUser.java
+│   └── UpdateProfileRequest.java
 ├── service/
 │   ├── CurrentUserService.java
 │   ├── PasswordChangeService.java
+│   ├── UserProfileService.java
 │   ├── impl/
 │   │   ├── CurrentUserServiceImpl.java
-│   │   └── PasswordChangeServiceImpl.java
-│   └── transaction/PasswordChangeTransactionService.java
-├── ratelimit/PasswordChangeRateLimiter.java
+│   │   ├── PasswordChangeServiceImpl.java
+│   │   └── UserProfileServiceImpl.java
+│   └── transaction/
+│       ├── PasswordChangeTransactionService.java
+│       └── ProfileUpdateTransactionService.java
+├── ratelimit/
+│   ├── PasswordChangeRateLimiter.java
+│   └── ProfileUpdateRateLimiter.java
 ├── config/
 │   ├── PasswordChangeConfiguration.java
-│   └── PasswordChangeProperties.java
+│   ├── PasswordChangeProperties.java
+│   ├── ProfileUpdateConfiguration.java
+│   └── ProfileUpdateProperties.java
+├── validation/               # PATCH字段存在性及可空性校验
 ├── entity/
 ├── mapper/
 └── model/
@@ -103,7 +115,7 @@ user/
 | `model` | 验证码用途等业务类型 |
 
 验证码、注册、登录、退出、重置密码的HTTP入口统一放在AuthController，对应业务Service接口继续独立。
-当前账号路由由user.controller.MeController提供，资料查询和改密业务接口、实现及对应测试归user；改密DTO、事务、限流和配置同样归user。
+当前账号路由由user.controller.MeController提供，资料查询、编辑和改密的接口、实现、DTO、事务、限流、配置、校验与测试均归user。
 用户模块复用auth.security中的密码工具、认证上下文和auth.session中的会话能力，不把整个改密用例放入auth。
 Spring将实现接口且标注@Service的Impl类注册为Bean，Controller通过构造方法依赖接口。
 SessionAuthenticationService、事务组件、限流器和安全工具保留具体类。
@@ -245,7 +257,28 @@ WRITE_BLOCKED允许改密，DISABLED拒绝访问。成功后全部旧会话失�
 WRITE_BLOCKED可以查询，canCreate=false；DISABLED返回403，无效或已撤销Token返回401，依赖故障返回503。
 后续请求重新认证并读取当前资料、角色与状态。查询不修改账号版本，也不延长会话有效期，响应使用no-store。
 
-## 10. 资源与测试
+## 10. 修改当前用户资料怎样阅读
+
+1. [MeController](src/main/java/com/freecontent/community/user/controller/MeController.java)的updateProfile方法：
+   `PATCH /api/v1/me`需要Bearer身份，成功200并返回更新后的CurrentUser。
+2. [UpdateProfileRequest](src/main/java/com/freecontent/community/user/dto/UpdateProfileRequest.java)：
+   以JSON Setter记录字段是否出现，包括显式null；仅接收expectedVersion、displayName、bio、avatarAssetId。
+   [ProfileUpdateValidator](src/main/java/com/freecontent/community/user/validation/ProfileUpdateValidator.java)
+   拒绝空修改、空昵称及bio:null；Unicode长度使用共用码点校验。
+3. [UserProfileService](src/main/java/com/freecontent/community/user/service/UserProfileService.java)及
+   [UserProfileServiceImpl](src/main/java/com/freecontent/community/user/service/impl/UserProfileServiceImpl.java)：
+   从认证上下文确定目标账号，并执行独立提交限流。
+4. [ProfileUpdateTransactionService](src/main/java/com/freecontent/community/user/service/transaction/ProfileUpdateTransactionService.java)：
+   锁定账号，复核认证版本、ACTIVE状态及expectedVersion；修改后重新读取账号和角色，不能返回写入前的上下文快照。
+5. [UserAccountMapper](src/main/java/com/freecontent/community/user/mapper/UserAccountMapper.java)的updateProfileFields方法：
+   以if/set动态生成字段白名单内的SET，值使用参数绑定；WHERE同时限定用户、资料版本、认证版本及ACTIVE状态。
+
+本期支持昵称、简介和清空头像；省略字段保持原值，bio空字符串表示清空简介，avatarAssetId:null表示清空头像。
+素材模块尚未接入，所有非空头像ID返回503，整个请求不发生部分保存；后续接入本人READY的AVATAR素材校验后再开放绑定。
+支持字段通过校验且值未变化时，返回200且不修改version或updated_at；版本过时始终409 RESOURCE_VERSION_CONFLICT，并返回currentVersion。
+实际修改递增资料version，不修改authVersion、密码或会话有效期。配置见app.user.profile-update，默认来源30次/分钟、用户20次/小时。
+
+## 11. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。

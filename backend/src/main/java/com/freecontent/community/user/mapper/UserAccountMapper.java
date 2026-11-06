@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import java.time.LocalDateTime;
+import com.freecontent.community.user.dto.UpdateProfileRequest;
 
 @Mapper
 public interface UserAccountMapper extends BaseMapper<UserAccount> {
@@ -38,4 +39,21 @@ public interface UserAccountMapper extends BaseMapper<UserAccount> {
             FROM app_user WHERE id = #{id} FOR UPDATE
             """)
     UserAccount findByIdForUpdate(@Param("id") String id);
+
+    @Update("""
+            <script>
+            UPDATE app_user
+            <set>
+              <if test="patch.hasDisplayName()">display_name=#{patch.displayName,jdbcType=VARCHAR},</if>
+              <if test="patch.hasBio()">bio=#{patch.bio,jdbcType=VARCHAR},</if>
+              <if test="patch.hasAvatarAssetId()">avatar_asset_id=#{patch.avatarAssetId,jdbcType=VARCHAR},</if>
+              version=version+1, updated_at=#{now}
+            </set>
+            WHERE id=#{id} AND version=#{expectedVersion}
+              AND auth_version=#{expectedAuthVersion} AND account_status='ACTIVE'
+            </script>
+            """)
+    int updateProfileFields(@Param("id") String id, @Param("expectedVersion") int expectedVersion,
+                            @Param("expectedAuthVersion") long expectedAuthVersion,
+                            @Param("patch") UpdateProfileRequest patch, @Param("now") LocalDateTime now);
 }

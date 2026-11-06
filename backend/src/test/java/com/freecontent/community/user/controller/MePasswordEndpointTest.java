@@ -7,6 +7,7 @@ import com.freecontent.community.auth.security.*;
 import com.freecontent.community.auth.service.SessionAuthenticationService;
 import com.freecontent.community.user.service.PasswordChangeService;
 import com.freecontent.community.user.service.CurrentUserService;
+import com.freecontent.community.user.service.UserProfileService;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
@@ -32,6 +33,7 @@ class MePasswordEndpointTest {
     @Autowired private JsonMapper json;
     @MockitoBean private PasswordChangeService service;
     @MockitoBean private CurrentUserService currentUsers;
+    @MockitoBean private UserProfileService profiles;
     @MockitoBean private SessionAuthenticationService authentication;
     private static final String TOKEN = "a".repeat(43);
 

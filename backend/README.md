@@ -60,7 +60,7 @@ mvn spring-boot:run
 
 验证码、注册、密码登录、退出和验证码重置密码统一由`auth/controller/AuthController.java`提供HTTP入口，
 分别依赖EmailChallengeService、RegistrationService、LoginService、LogoutService和PasswordResetService接口，
-当前账号资料查询和改密由`user/controller/MeController.java`提供入口，分别依赖CurrentUserService和PasswordChangeService接口。
+当前账号资料查询、编辑和改密由`user/controller/MeController.java`提供入口，依赖CurrentUserService、UserProfileService和PasswordChangeService接口。
 认证相关的五个接口及实现归`auth/service`；当前账号改密的DTO、Service、事务、限流和配置统一归`user`。
 后续业务代码遵循项目根目录[AGENTS.md](../AGENTS.md)中的业务结构约定。
 
@@ -124,7 +124,7 @@ backend/
 
 ## 下一步
 
-1. 实现当前账号资料编辑；
+1. 接入素材基础能力与上传，开放头像素材绑定；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -394,3 +394,40 @@ WRITE_BLOCKED允许查询，返回canCreate=false；DISABLED返回403 ACCOUNT_RE
 
 2026-11-06验证：全部162项测试通过，新增真实HTTP当前用户查询、账号隔离、资料/角色更新、
 账号限制、过期/退出凭证拒绝、响应字段白名单及会话不续期验证；注册、登录、退出和两种改密流程回归通过。
+
+## 修改当前用户资料
+
+`PATCH /api/v1/me`需要Bearer身份，提交GET /me返回的资料version作为expectedVersion，
+并至少提供displayName、bio、avatarAssetId中的一个字段。只更新提供的字段，成功200并返回写入后的CurrentUser及新version。
+不接收客户端指定的userId或邮箱，不允许回传roles、accountStatus、emailVerified、密码等字段；未知字段返回400。
+
+| 字段 | 省略 | 显式null | 其他输入 |
+| --- | --- | --- | --- |
+| displayName | 保持原值 | 422 | 非空昵称，1～40个Unicode字符 |
+| bio | 保持原值 | 422 | 最多500个Unicode字符，空字符串清空简介 |
+| avatarAssetId | 保持原值 | 清空头像 | 本期尚不开放非空ID绑定，返回503 |
+
+DTO通过JSON Setter保留字段存在标记，拒绝客户端篡改内部标记，不将数字、数组或对象静默转换为资料字符串。
+昵称和简介使用Unicode码点计数，不静默截断或trim。只提交expectedVersion或不符合字段校验的输入返回422。
+
+UserProfileService与事务、DTO、配置、限流和校验都位于user模块。
+事务锁定目标账号并再次检查认证版本、ACTIVE状态及资料版本，然后通过MyBatis if/set生成动态更新，
+SQL列由后端白名单固定，值使用参数绑定；WHERE包含用户ID、expectedVersion、认证版本及ACTIVE状态。
+版本冲突返回409 RESOURCE_VERSION_CONFLICT及currentVersion，客户端重新读取并确认后再保存，不自动覆盖。
+对本期已支持且通过校验的字段，值均相同时返回200和当前资料，version与updated_at不变；过时版本仍返回409。
+
+实际修改只递增资料version，不更改auth_version、密码、角色、邮箱验证状态和会话，不要求重新登录。
+接口返回数据库更新后的资料，而非认证阶段的旧CurrentUser快照。WRITE_BLOCKED或DISABLED不能修改资料。
+认证状态在过滤器验证后发生变化时，事务复核会拒绝写入；依赖故障返回503，响应仍遵循Problem Details及no-store规范。
+
+头像阶段范围已确认：本次不创建素材表或上传接口。avatarAssetId:null和省略头像均可正常处理；
+所有非空头像ID请求返回503 DEPENDENCY_UNAVAILABLE，包括同时提交昵称/简介的请求，整次修改不发生部分保存。
+后续素材模块就绪后，再接入头像归属本人、AVATAR用途与READY状态的校验，不能绕过这些条件直接绑定ID。
+
+app.user.profile-update配置：同来源每分钟30次、同用户每小时20次，独立{profile-update}配额键。
+环境变量为PROFILE_UPDATE_IP_PER_MINUTE_LIMIT、PROFILE_UPDATE_USER_HOURLY_LIMIT和PROFILE_UPDATE_REDIS_KEY_PREFIX，
+默认Redis前缀fc:user:。所有进入业务的有效请求均计数，包含相同值保存及版本冲突；超限429附Retry-After。
+来源使用TCP连接地址，不直接信任X-Forwarded-For。
+
+2026-11-06验证：全部183项测试通过，覆盖真实HTTP/MySQL/Redis的部分更新、空值语义、Unicode边界、
+SQL参数绑定、相同值不增版本、并发版本冲突、事务内身份/状态复核、头像请求不部分保存、提交限流及API文档字段约束。

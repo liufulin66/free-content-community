@@ -2,9 +2,11 @@ package com.freecontent.community.user.controller;
 
 import com.freecontent.community.user.dto.ChangePasswordRequest;
 import com.freecontent.community.user.dto.CurrentUser;
+import com.freecontent.community.user.dto.UpdateProfileRequest;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.user.service.PasswordChangeService;
 import com.freecontent.community.user.service.CurrentUserService;
+import com.freecontent.community.user.service.UserProfileService;
 import com.freecontent.community.common.api.ApiResponse;
 import com.freecontent.community.common.api.RequestIdFilter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,10 +26,12 @@ import org.springframework.web.bind.annotation.*;
 public class MeController {
     private final PasswordChangeService passwords;
     private final CurrentUserService currentUsers;
+    private final UserProfileService profiles;
 
-    public MeController(PasswordChangeService passwords, CurrentUserService currentUsers) {
+    public MeController(PasswordChangeService passwords, CurrentUserService currentUsers, UserProfileService profiles) {
         this.passwords = passwords;
         this.currentUsers = currentUsers;
+        this.profiles = profiles;
     }
 
     @GetMapping
@@ -36,6 +40,16 @@ public class MeController {
     public ApiResponse<CurrentUser> getCurrentUser(
             @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal currentSession) {
         return ApiResponse.of(currentUsers.getCurrentUser(currentSession), MDC.get(RequestIdFilter.MDC_KEY));
+    }
+
+    @PatchMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(operationId = "updateCurrentUser", summary = "修改当前用户资料",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    public ApiResponse<CurrentUser> updateProfile(@Valid @RequestBody UpdateProfileRequest request,
+            @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal currentSession,
+            HttpServletRequest servletRequest) {
+        return ApiResponse.of(profiles.update(request, currentSession, servletRequest.getRemoteAddr()),
+                MDC.get(RequestIdFilter.MDC_KEY));
     }
 
     @PutMapping(value = "/password", consumes = MediaType.APPLICATION_JSON_VALUE)

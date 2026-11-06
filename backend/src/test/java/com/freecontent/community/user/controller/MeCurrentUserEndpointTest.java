@@ -9,6 +9,7 @@ import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
 import com.freecontent.community.user.model.UserRole;
 import com.freecontent.community.user.service.PasswordChangeService;
+import com.freecontent.community.user.service.UserProfileService;
 import com.freecontent.community.user.service.impl.CurrentUserServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MeCurrentUserEndpointTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private PasswordChangeService passwords;
+    @MockitoBean private UserProfileService profiles;
     @MockitoBean private SessionAuthenticationService authentication;
     private static final String TOKEN = "a".repeat(43);
 

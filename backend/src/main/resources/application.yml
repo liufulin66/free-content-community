@@ -72,6 +72,10 @@ app:
       - image/webp
       - image/gif
   user:
+    profile-update:
+      ip-per-minute-limit: ${PROFILE_UPDATE_IP_PER_MINUTE_LIMIT:30}
+      user-hourly-limit: ${PROFILE_UPDATE_USER_HOURLY_LIMIT:20}
+      redis-key-prefix: ${PROFILE_UPDATE_REDIS_KEY_PREFIX:fc:user:}
     password-change:
       ip-per-minute-limit: ${PASSWORD_CHANGE_IP_PER_MINUTE_LIMIT:30}
       user-hourly-limit: ${PASSWORD_CHANGE_USER_HOURLY_LIMIT:20}
