@@ -29,7 +29,7 @@ public record UploadSession(
         @Schema(minimum = "1", maximum = "10000")
         int totalParts,
         List<UploadedPart> uploadedParts,
-        @Schema(nullable = true)
+        @Schema(types = {"object", "null"}, implementation = UploadTarget.class, schemaResolution = Schema.SchemaResolution.INLINE)
         UploadTarget singleUploadTarget, Instant expiresAt) {
 
     @Schema(requiredProperties = {"partNumber", "etag", "sizeBytes"})

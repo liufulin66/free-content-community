@@ -40,6 +40,9 @@ public interface UserAccountMapper extends BaseMapper<UserAccount> {
             """)
     UserAccount findByIdForUpdate(@Param("id") String id);
 
+    @Select("SELECT * FROM app_user WHERE id=#{id} FOR SHARE")
+    UserAccount findByIdForShare(@Param("id") String id);
+
     @Update("""
             <script>
             UPDATE app_user

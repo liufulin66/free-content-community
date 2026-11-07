@@ -11,6 +11,8 @@ import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
 import com.freecontent.community.user.model.UserRole;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -40,6 +42,16 @@ class SessionEndpointTest {
     @MockitoBean private RegistrationService registrationService;
     @MockitoBean private SessionAuthenticationService authentication;
     private static final String TOKEN = "a".repeat(43);
+
+    @ParameterizedTest
+    @ValueSource(strings = {"123456789012", "12.5", "true", "false"})
+    void rejectsNonStringPasswordsBeforeCallingLogin(String password) throws Exception {
+        mvc.perform(post("/api/v1/auth/sessions").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"a@example.test\",\"password\":" + password + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+        verifyNoInteractions(service);
+    }
 
     @Test
     void loginMatchesContractAndIgnoresStaleBearerOnPublicEntry() throws Exception {

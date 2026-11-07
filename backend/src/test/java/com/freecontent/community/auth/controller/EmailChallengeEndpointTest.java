@@ -11,6 +11,8 @@ import com.freecontent.community.auth.service.RegistrationService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -42,6 +44,16 @@ class EmailChallengeEndpointTest {
 
     @MockitoBean
     private EmailChallengeService service;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "1", "\"0\"", "\"1\""})
+    void rejectsEnumOrdinalsBeforeCreatingAChallenge(String purpose) throws Exception {
+        mvc.perform(post("/api/v1/auth/email-challenges").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"purpose\":" + purpose + ",\"email\":\"a@example.test\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+        verifyNoInteractions(service);
+    }
 
     @Test
     void acceptedResponseHasReceiptAndNoVerificationCode() throws Exception {

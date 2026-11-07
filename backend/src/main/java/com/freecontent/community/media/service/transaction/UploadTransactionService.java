@@ -41,6 +41,9 @@ public class UploadTransactionService {
             if ("SUCCEEDED".equals(record.getState())) {
                 MediaUpload previous = uploads.selectById(record.getUploadId());
                 if (previous == null || !Objects.equals(previous.getOwnerId(), owner)) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+                if (!"UPLOADING".equals(previous.getState()) || !previous.getExpiresAt().isAfter(now)) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED, "原上传会话已不可写入，不能重放上传凭证");
+                }
                 MediaAsset previousAsset = assets.selectById(previous.getAssetId());
                 if (previousAsset == null || !Objects.equals(previousAsset.getOwnerId(), owner)) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
                 return new Claim(record, previous, previousAsset);

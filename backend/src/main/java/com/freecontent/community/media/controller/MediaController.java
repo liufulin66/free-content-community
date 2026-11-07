@@ -9,6 +9,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +26,8 @@ import com.freecontent.community.media.dto.UploadPolicy;
 import com.freecontent.community.media.dto.UploadSession;
 import com.freecontent.community.media.service.UploadPolicyService;
 import com.freecontent.community.media.service.UploadService;
+import com.freecontent.community.media.service.UploadQueryService;
+import com.freecontent.community.media.service.UploadCancellationService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -39,10 +44,14 @@ public class MediaController {
 
     private final UploadPolicyService policies;
     private final UploadService uploads;
+    private final UploadQueryService queries;
+    private final UploadCancellationService cancellations;
 
-    public MediaController(UploadPolicyService policies, UploadService uploads) {
+    public MediaController(UploadPolicyService policies, UploadService uploads, UploadQueryService queries, UploadCancellationService cancellations) {
         this.policies = policies;
         this.uploads = uploads;
+        this.queries = queries;
+        this.cancellations = cancellations;
     }
 
     @GetMapping("/upload-policy")
@@ -50,6 +59,25 @@ public class MediaController {
             security = @SecurityRequirement(name = "bearerAuth"))
     public ApiResponse<UploadPolicy> getUploadPolicy() {
         return ApiResponse.of(policies.getUploadPolicy(), MDC.get(RequestIdFilter.MDC_KEY));
+    }
+
+    @GetMapping("/uploads/{uploadId}")
+    @Operation(operationId = "getMyUpload", summary = "查询本人上传进度并恢复上传", security = @SecurityRequirement(name = "bearerAuth"))
+    public ApiResponse<UploadSession> getMyUpload(
+            @Parameter(schema = @Schema(minLength = 1, maxLength = 64, pattern = "^[A-Za-z0-9_-]+$")) @PathVariable String uploadId,
+            @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal principal, HttpServletRequest request) {
+        return ApiResponse.of(queries.getMyUpload(uploadId, principal, request.getRemoteAddr()), MDC.get(RequestIdFilter.MDC_KEY));
+    }
+
+    @DeleteMapping("/uploads/{uploadId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(operationId = "cancelMyUpload", summary = "取消本人尚未完成的上传", security = @SecurityRequirement(name = "bearerAuth"))
+    public ResponseEntity<Void> cancelMyUpload(
+            @Parameter(schema = @Schema(minLength = 1, maxLength = 64, pattern = "^[A-Za-z0-9_-]+$")) @PathVariable String uploadId,
+            @Parameter(schema = @Schema(minimum = "1", maximum = "2147483647", type = "integer", format = "int32")) @RequestParam Integer expectedVersion,
+            @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal principal, HttpServletRequest request) {
+        cancellations.cancel(uploadId, expectedVersion, principal, request.getRemoteAddr());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping(value = "/uploads", consumes = MediaType.APPLICATION_JSON_VALUE)

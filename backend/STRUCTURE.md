@@ -13,7 +13,7 @@
 | --- | --- |
 | `auth` | 验证码、注册、密码登录、退出、验证码重置及Redis会话认证 |
 | `user` | 当前账号与用户资料业务、修改当前账号密码、角色及数据库访问 |
-| `media` | 上传策略、私有上传会话创建与素材登记 |
+| `media` | 上传策略、私有上传会话创建、查询续签、取消及持久化文件回收 |
 | `common` | 统一响应、异常、请求标识、通用校验 |
 | `config` | Web、MyBatis、OpenAPI等全局配置 |
 
@@ -121,6 +121,9 @@ user/
 Spring将实现接口且标注@Service的Impl类注册为Bean，Controller通过构造方法依赖接口。
 SessionAuthenticationService、事务组件、限流器和安全工具保留具体类。
 
+全局`config/WebConfig.java`统一配置CORS与JSON类型边界，阻止数字/布尔值转为字符串以及枚举序号转换。
+字段内容及空值仍由所属业务模块的DTO校验，不把业务流程放入全局配置。
+
 `service.transaction` 属于业务层内部。HTTP控制层调用主Service，
 主Service接口的实现协调限流、密码计算及事务组件。Mapper承接数据库操作。
 认证事务会调用`user.mapper`，以便账号、角色与验证码消费共享同一个本地事务。
@@ -140,6 +143,8 @@ SessionAuthenticationService、事务组件、限流器和安全工具保留具�
    后台认领并投递已保存任务，按租约令牌回写结果。
 
 前三步完成后返回202；后台投递独立执行。SMTP操作不占用长时间数据库事务。
+SMTP连接、读取、写入超时分别默认3秒、5秒、5秒，配置位于`spring.mail.properties`；
+`auth/job/EmailDeliveryWorkerTest`通过真实但不响应的本机SMTP连接验证超时后进入重试。
 
 ## 4. 邮箱注册怎样阅读
 
@@ -305,9 +310,38 @@ WRITE_BLOCKED可以读取策略。这里只提供策略查询，后续实际上�
 
 同一账号操作采用账号行→幂等行的锁顺序。准备签名不持有写事务，晚到的旧请求必须通过租约令牌校验才能提交。
 会话的签名时间、TTL及配置指纹是创建响应快照，后续续签不能覆盖这些字段来改变原幂等结果。
-当前仅P0图片SINGLE；素材初始WAITING_UPLOAD，尚不能用于头像或内容关联。会话查询、完成、取消及READY处理流程仍待实现。
+当前仅P0图片SINGLE；素材初始WAITING_UPLOAD，尚不能用于头像或内容关联。查询续签与取消已实现，完成及READY处理流程仍待实现。
 
-## 13. 资源与测试
+## 13. 查询上传会话与恢复上传怎样阅读
+
+1. `media/controller/MediaController.java`的getMyUpload：`GET /api/v1/media/uploads/{uploadId}`，无请求体和幂等键，成功200。
+2. `media/service/UploadQueryService.java`及`media/service/impl/UploadQueryServiceImpl.java`：路径ID校验、独立查询配额及依赖异常映射。
+3. `media/ratelimit/UploadQueryRateLimiter.java`和`redis/upload-query-rate-limit.lua`：用户与来源独立分钟窗口，Redis配额在SQL事务外检查。
+4. `media/service/transaction/UploadQueryTransactionService.java`的read：按账号→会话顺序取得共享锁，复核authVersion、当前状态及归属，组装当前UploadSession。
+5. 同类renewTarget和signingView：按剩余有效时间裁剪TTL，用内存副本复用原存储键、大小、类型和摘要调用UploadSigner，不覆盖创建时的签名快照。
+6. `user/mapper/UserAccountMapper.java`的findByIdForShare及`media/mapper/MediaUploadMapper.java`的findOwnedForShare：只查询并协调并发写入，无业务数据更新。
+7. `media/config/UploadQueryProperties.java`及UploadQueryConfiguration：app.media.upload-query配置与启动校验。
+
+查询中的版本和到期时间保持数据库原值；UPLOADING已超时只在响应视图显示EXPIRED。
+终态或WRITE_BLOCKED返回singleUploadTarget:null，禁止通过GET申请新的写入凭证。
+P0固定SINGLE、partSizeBytes:null、totalParts:1及uploadedParts:[]；分片列表和真正的断点续传后续实现。
+本接口沿用V5表结构，不新增迁移；测试按media模块的config、service和ratelimit目录组织。
+
+## 14. 取消上传与文件回收怎样阅读
+
+1. `media/controller/MediaController.java`的cancelMyUpload：DELETE本人uploadId，expectedVersion在查询参数中，成功204空响应。
+2. `media/service/UploadCancellationService.java`及`service/impl/UploadCancellationServiceImpl.java`：输入校验、独立取消限流及依赖错误映射。
+3. `media/service/transaction/UploadCancellationTransactionService.java`：账号→会话→素材锁序，CAS取消、素材FAILED及清理任务同事务提交。
+4. `media/entity/UploadCleanupTask.java`及`media/mapper/UploadCleanupTaskMapper.java`：V6持久化清理记录，upload_id唯一，原子租约认领及令牌回写。
+5. `media/job/UploadCleanupWorker.java`：到期后认领一个任务，复核取消状态、素材不可用、归属、对象键和存储配置；删除失败退避，耗尽重试保留FAILED。
+6. `media/storage/UploadObjectCleaner.java`：MinIO物理删除及10秒总超时；存储I/O不持有取消事务，Bean关闭时释放HTTP资源。
+7. `media/config/UploadCancellationProperties.java`与UploadCleanupProperties：app.media.upload-cancel和app.media.upload-cleanup配置；UploadCancellationConfiguration注册。
+
+后台回收默认等待原会话到期后600秒，204只确认逻辑取消与持久化入队。前端仍需单独abort文件请求。
+重复取消不递增版本或重复入队；已完成上传及READY/PROCESSING素材不能通过此接口删除。
+创建幂等重放同时检查原会话状态与期限，避免取消后返回旧上传凭证。完成上传接口仍待实现。
+
+## 15. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。
@@ -320,7 +354,9 @@ WRITE_BLOCKED可以读取策略。这里只提供策略查询，后续实际上�
 
 ```powershell
 $env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
+$env:MEDIA_UPLOAD_CLEANUP_ENABLED = "false"
 mvn verify
 ```
 
-测试关闭邮件后台投递；集成测试只操作各自生成的测试记录。
+测试关闭自动邮件投递和自动文件清理；清理集成测试按自身任务ID显式执行，只操作各自生成的记录和对象。
+运行共享本地数据库的完整集成测试前，停止独立开发后端，防止其后台执行器与测试争抢人为调到期的任务；CI应使用独立数据库环境。

@@ -43,6 +43,8 @@ class UploadPolicyEndpointTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private SessionAuthenticationService authentication;
     @MockitoBean private com.freecontent.community.media.service.UploadService uploads;
+    @MockitoBean private com.freecontent.community.media.service.UploadQueryService queries;
+    @MockitoBean private com.freecontent.community.media.service.UploadCancellationService cancellations;
 
     @Test
     void returnsBoundConfigurationIncludingByteCountsLargerThanAnInteger() throws Exception {

@@ -12,6 +12,8 @@ import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
 import com.freecontent.community.user.model.UserRole;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
@@ -41,6 +43,17 @@ class RegistrationEndpointTest {
     private MockMvc mvc;
     @MockitoBean
     private RegistrationService service;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"123456", "12.5", "true", "false"})
+    void rejectsNonStringVerificationCodesBeforeCallingRegistration(String code) throws Exception {
+        String body = json("RegistrationPassword!", "创作者")
+                .replace("\"code\":\"123456\"", "\"code\":" + code);
+        mvc.perform(post("/api/v1/auth/registrations").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+        verifyNoInteractions(service);
+    }
 
     @Test
     void createsVerifiedUserWithoutCredentialsOrSession() throws Exception {

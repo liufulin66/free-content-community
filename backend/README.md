@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询及私有上传会话创建，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签及取消与后台文件回收，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -123,9 +123,13 @@ backend/
 4. **HTTP 422**：使用 `HttpStatus.UNPROCESSABLE_CONTENT`；`UNPROCESSABLE_ENTITY` 在 Spring 7 已过时。
 5. **Git Bash 环境变量**：不要把 `/` 作为环境变量值，MSYS 会把它转成 Git 安装目录下的路径。RabbitMQ vhost 使用 Spring 默认的 `/`，不通过 `.env` 传入。
 
+JSON请求严格匹配契约类型：数字和布尔值不会自动转换成字符串，枚举只接受名称，不接受数字序号或序号字符串。
+类型不匹配返回400 `MALFORMED_REQUEST`；缺失、空值和字符串内容继续按各接口的字段规则校验。
+Swagger显式声明验证码申请202、注册201和登录201，与实际成功响应一致。
+
 ## 下一步
 
-1. 继续实现上传会话查询、上传完成校验及素材READY流程，随后开放头像素材绑定；
+1. 继续实现上传完成校验及素材READY流程，随后开放头像素材绑定；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -156,6 +160,9 @@ Redis Lua 原子检查配额，计数表示申请次数，数据库失败不自�
 已经发出的旧邮件无法撤回，但旧申请不能再完成验证。
 后台采用 MySQL 条件认领、60 秒租约和认领令牌，扫描间隔默认 1 秒。
 SMTP 默认最多尝试 3 次，失败按 5 秒、10 秒等间隔退避；任务过期或失效后停止投递。
+SMTP连接、读取和写入等待默认分别为3000、5000、5000毫秒，避免服务无响应时无限占用调度线程。
+可通过`MAIL_SMTP_CONNECTION_TIMEOUT_MILLIS`、`MAIL_SMTP_READ_TIMEOUT_MILLIS`和`MAIL_SMTP_WRITE_TIMEOUT_MILLIS`覆盖，值应为正整数毫秒。
+这些是各阶段的Socket等待时限，不是整次投递的总时限；任务租约不会中断网络调用。
 进程在 SMTP 接收成功但数据库回写前退出，可能导致同一验证码重复投递。
 所有终结任务会清理验证码密文；数据库租约恢复不依赖进程内队列。
 
@@ -526,11 +533,108 @@ Maven显式补齐与MinIO 9.0.4匹配的okhttp-jvm 5.5.1；多平台入口包本
 生成签名是本地计算，不逐次探测MinIO在线状态；创建成功表示业务记录已经提交，实际文件传输由客户端执行。
 前端按singleUploadTarget的PUT、URL和headers发送文件二进制（必须带Content-Type、Content-Length；提供sha256时还要带x-amz-checksum-sha256），不附带业务Bearer。
 签名约束方法、对象、Content-Type及Content-Length，实际大小不符会在写入前被MinIO拒绝；提供sha256时校验和也会被验证。真实格式及后续READY校验仍由完成上传流程负责。
-签名过期与会话过期独立，幂等重放保留原签名到期时间；后续会话查询接口负责在会话有效时重新签发地址。
+签名过期与会话过期独立，幂等重放保留原签名到期时间；会话查询接口已支持在会话有效时重新签发地址。
 
-本次只实现创建会话和私有素材登记。会话查询、完成、取消、异步校验及READY流程仍待实现，非空头像绑定继续按原规则拒绝。
+当前已实现创建会话、私有素材登记、查询续签及取消。完成、异步校验及READY流程仍待实现，非空头像绑定继续按原规则拒绝。
 
 2026-11-07验证：`mvn verify`通过全部239项测试（145 单元/Web + 94 集成），
 0失败、0错误、0跳过。覆盖真实HTTP/MySQL/Redis/MinIO上传、签名篡改拒绝、私有读取拒绝、
 幂等重放/冲突、重放不消耗限流额度、受信代理转发头来源、Content-Length与可选SHA-256校验和、
 8并发去重、处理中409、租约接管及旧请求隔离、事务回滚、认证状态复核、限流、严格类型与生成的OpenAPI。
+
+## 查询本人上传进度并恢复上传
+
+`GET /api/v1/media/uploads/{uploadId}`需要Bearer身份，无请求体和Idempotency-Key，成功200及`ApiResponse<UploadSession>`。
+只查询本人会话，非本人或不存在统一404；非法ID返回422及path位置的uploadId校验信息。
+返回数据库当前version及原id、assetId、expiresAt，不创建新资源、不递增版本、不延长会话或登录有效期。
+本期只支持SINGLE，因此partSizeBytes为null、totalParts为1、uploadedParts为[]；不虚构已上传字节数或百分比。
+
+UPLOADING且仍有效、账号ACTIVE时，沿用原storageKey、Content-Type、声明大小及可选SHA-256生成新签名。
+签名有效期取当前策略、会话剩余整秒和S3最大604800秒中的最小值，剩余不足一个签名秒时不再签发。
+签名参数通过内存副本计算，不覆盖创建时的signature_at、signature_ttl_seconds及signer_id，创建接口仍能重放原结果。
+SINGLE中断后使用同一个目标重新传完整文件；浏览器丢失File对象时仍需重新选择原文件。
+
+COMPLETED、CANCELLED、EXPIRED保留其终态且singleUploadTarget为null。
+UPLOADING记录已超过expiresAt时，响应视图显示EXPIRED，但GET不回写数据库到期状态。
+WRITE_BLOCKED允许查询元数据，返回singleUploadTarget:null；DISABLED返回403，认证版本过时返回401。
+鉴权通过后，查询事务仍复核当前账号状态和authVersion，防止旧身份继续申请新凭证。
+
+配置位于`app.media.upload-query`，与创建额度独立；通过格式校验的已认证查询均计数，包括终态和404查询。
+
+| 配置 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| ip-per-minute-limit | MEDIA_UPLOAD_QUERY_IP_PER_MINUTE_LIMIT | 120 |
+| user-per-minute-limit | MEDIA_UPLOAD_QUERY_USER_PER_MINUTE_LIMIT | 60 |
+| redis-key-prefix | MEDIA_UPLOAD_QUERY_REDIS_KEY_PREFIX | fc:media: |
+
+Redis Lua原子检查两个分钟窗口，拒绝时不消耗另一项配额；429返回Retry-After，Redis不可确认时返回503。
+来源取服务端识别的TCP/可信代理地址。窗口从首次获准请求起算，修改配置需重启后端。
+Redis配额在SQL事务外检查；查询事务按账号→上传会话顺序取得FOR SHARE锁，使用同一数据源复核权限和当前状态。
+共享锁允许并发查询，并与账号限制或会话状态的并发修改协调；事务只查询和本地签名，不写业务表、不调用MinIO网络接口。
+已经签发的存储地址仍有短期有效窗口，不能撤销已开始的存储传输；后续完成上传仍须复核会话状态和真实文件。
+
+续签后的地址已通过真实MinIO PUT验证，保留Content-Type、Content-Length和可选校验和约束。
+前端向MinIO上传时不附带业务Bearer；浏览器用原文件二进制发送，由浏览器生成Content-Length。
+singleUploadTarget的OpenAPI 3.1声明已明确允许对象或null；DTO中已有业务注释保留。
+查询接口复用V5表结构；取消及后台回收见下节。上传完成、异步处理、素材READY及分片续传仍按后续阶段实现。
+
+2026-11-07验证：`mvn clean verify`通过全部266项测试（152项单元/Web、114项集成），0失败、0错误、0跳过，打包成功。
+本用例新增26项专项检查，覆盖原会话续签、期限裁剪、终态/过期、越权及账号限制、独立配额、并发共享锁、
+认证后状态复核、原始幂等结果不变、真实MinIO恢复上传及长度/校验和约束、配置校验和OpenAPI 3.1可空模型。
+
+## 取消本人上传与后台回收
+
+`DELETE /api/v1/media/uploads/{uploadId}?expectedVersion=当前版本`需要Bearer身份，无JSON请求体和幂等键。
+成功204且响应体为空，表示取消状态与持久化清理任务已经提交，不表示MinIO文件已物理删除。
+客户端停止发送文件需另外调用XHR.abort或AbortController.abort，不能用本地中断代替服务端204确认。
+
+UploadCancellationService及其实现归media模块。事务按账号→会话→素材加锁，复核authVersion、ACTIVE状态及本人归属。
+首次取消仅允许未到期UPLOADING、expectedVersion匹配且素材WAITING_UPLOAD；条件更新会话为CANCELLED、version+1，
+将素材设为已有枚举FAILED，并在同一事务插入唯一清理任务。任务入队失败时所有更新回滚，API返回503。
+已经CANCELLED的本人会话重复取消返回204，包括携带第一次的旧正整数版本，不增加版本或重复创建任务。
+COMPLETED、EXPIRED、超时UPLOADING、版本冲突及已READY/PROCESSING素材均返回409 UPLOAD_STATE_CONFLICT。
+非法ID或非正版本返回422，缺少、无法解析或超出int32范围的版本返回400；非本人或不存在统一404。
+WRITE_BLOCKED及DISABLED禁止取消；取消不改变账号资料版本、认证版本或其他会话。
+
+创建接口的幂等重放也复核原上传状态与期限，取消、完成或过期后不再返回原上传凭证，避免借旧创建键继续操作。
+此类终态重放使用创建接口契约已有的403 PERMISSION_DENIED；取消接口自身的状态和版本冲突仍为409 UPLOAD_STATE_CONFLICT。
+查询接口对CANCELLED返回singleUploadTarget:null。后续完成上传流程同样须拒绝CANCELLED。
+
+配置为`app.media.upload-cancel`，计数窗口和创建、查询独立，所有合法取消请求及重复取消均计数。
+
+| 配置 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| ip-per-minute-limit | MEDIA_UPLOAD_CANCEL_IP_PER_MINUTE_LIMIT | 120 |
+| user-per-minute-limit | MEDIA_UPLOAD_CANCEL_USER_PER_MINUTE_LIMIT | 60 |
+| redis-key-prefix | MEDIA_UPLOAD_CANCEL_REDIS_KEY_PREFIX | fc:media: |
+
+复用双分钟配额Lua算法，使用独立{upload-cancel}键作用域，429附Retry-After。计数在SQL事务外完成，不因后续事务失败退还。
+
+### 持久化清理任务
+
+V6新增media_upload_cleanup，按upload_id唯一，保存对象键、存储配置指纹、计划时间、尝试次数、租约令牌及安全错误码。
+原V1～V5保持不变。任务首次执行时间为原会话expiresAt＋grace-seconds（默认600秒），覆盖已签发地址的有效窗口并预留在途缓冲。
+UploadCleanupWorker每轮最多认领一个任务，原子更新为RUNNING；存储删除在数据库事务外进行。
+执行前复核会话CANCELLED、素材FAILED、三方归属/关联/对象键及存储配置一致，限定生成的私有对象前缀，禁止误删已就绪或其他对象。
+删除使用既有MinIO SDK，调用总超时10秒；不存在的对象可幂等删除，进程在删除后、回写前退出时可由过期租约恢复。
+结果回写同时校验RUNNING、租约令牌及租约期限，旧执行者不能覆盖新认领结果。
+
+配置为`app.media.upload-cleanup`：
+
+| 配置 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| enabled | MEDIA_UPLOAD_CLEANUP_ENABLED | true |
+| grace-seconds | MEDIA_UPLOAD_CLEANUP_GRACE_SECONDS | 600 |
+| poll-delay-millis | MEDIA_UPLOAD_CLEANUP_POLL_DELAY_MILLIS | 1000 |
+| lease-seconds | MEDIA_UPLOAD_CLEANUP_LEASE_SECONDS | 60，必须大于存储调用10秒上限 |
+| max-attempts | MEDIA_UPLOAD_CLEANUP_MAX_ATTEMPTS | 3 |
+| retry-base-seconds | MEDIA_UPLOAD_CLEANUP_RETRY_BASE_SECONDS | 5，指数退避且最多60秒 |
+
+失败时重新排队，达到尝试上限保留FAILED；配置变化或资源状态不再允许删除时也保留失败记录，不对外暴露存储内部信息。
+物理清理失败不会撤回已提交的取消结果，后台故障由任务记录和安全日志排查。当前没有公开的清理任务查询或重试接口。
+取消不直接关闭浏览器到MinIO的连接；极长在途传输不受数据库状态强制中断，缓冲并非网络截止保证，后续孤立对象对账需覆盖此类残留。
+完成上传、媒体校验、READY及分片上传/AbortMultipartUpload仍是后续阶段，本次未修改前端上传控件。
+
+2026-11-07验证：`mvn clean verify`通过全部306项测试（170项单元/Web、136项集成），0失败、0错误、0跳过，打包成功。
+本用例新增40项专项检查，覆盖204空响应、重复取消、状态/版本/归属保护、旧创建键凭证拒绝、入队失败回滚、
+认证版本复核、取消与完成条件更新竞争、独立限流、真实MinIO延迟回收、持久化重试、并发认领、租约接管及旧令牌回写拒绝。

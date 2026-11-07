@@ -54,6 +54,7 @@ public class AuthController {
     }
 
     @PostMapping(value = "/email-challenges", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(operationId = "createEmailChallenge", summary = "发送邮箱验证码")
     public ResponseEntity<ApiResponse<ChallengeReceipt>> createEmailChallenge(
             @Valid @RequestBody CreateEmailChallengeRequest request, HttpServletRequest servletRequest) {
@@ -64,6 +65,7 @@ public class AuthController {
     }
 
     @PostMapping(value = "/registrations", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
     @Operation(operationId = "registerAccount", summary = "邮箱验证码注册")
     public ResponseEntity<ApiResponse<CurrentUser>> register(
             @Valid @RequestBody RegisterRequest request, HttpServletRequest servletRequest) {
@@ -73,6 +75,7 @@ public class AuthController {
     }
 
     @PostMapping(value = "/sessions", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
     @Operation(operationId = "createSession", summary = "密码登录并创建会话")
     public ResponseEntity<ApiResponse<LoginResult>> login(
             @Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
