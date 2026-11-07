@@ -69,6 +69,19 @@ app:
     bucket: ${MINIO_BUCKET:free-content}
     region: ${MINIO_REGION:us-east-1}
   media:
+    asset-query:
+      ip-per-minute-limit: ${MEDIA_ASSET_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${MEDIA_ASSET_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${MEDIA_ASSET_QUERY_REDIS_KEY_PREFIX:fc:media:}
+    task-query:
+      ip-per-minute-limit: ${MEDIA_TASK_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${MEDIA_TASK_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${MEDIA_TASK_QUERY_REDIS_KEY_PREFIX:fc:media:}
+    upload-completion:
+      ip-per-minute-limit: ${MEDIA_UPLOAD_COMPLETION_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${MEDIA_UPLOAD_COMPLETION_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${MEDIA_UPLOAD_COMPLETION_REDIS_KEY_PREFIX:fc:media:}
+      retry-after-seconds: ${MEDIA_UPLOAD_COMPLETION_RETRY_AFTER_SECONDS:2}
     upload-cancel:
       ip-per-minute-limit: ${MEDIA_UPLOAD_CANCEL_IP_PER_MINUTE_LIMIT:120}
       user-per-minute-limit: ${MEDIA_UPLOAD_CANCEL_USER_PER_MINUTE_LIMIT:60}

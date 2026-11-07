@@ -13,7 +13,7 @@
 | --- | --- |
 | `auth` | 验证码、注册、密码登录、退出、验证码重置及Redis会话认证 |
 | `user` | 当前账号与用户资料业务、修改当前账号密码、角色及数据库访问 |
-| `media` | 上传策略、私有上传会话创建、查询续签、取消及持久化文件回收 |
+| `media` | 上传策略、私有上传会话创建、查询续签、取消、文件回收、完成确认、任务及素材查询 |
 | `common` | 统一响应、异常、请求标识、通用校验 |
 | `config` | Web、MyBatis、OpenAPI等全局配置 |
 
@@ -310,7 +310,7 @@ WRITE_BLOCKED可以读取策略。这里只提供策略查询，后续实际上�
 
 同一账号操作采用账号行→幂等行的锁顺序。准备签名不持有写事务，晚到的旧请求必须通过租约令牌校验才能提交。
 会话的签名时间、TTL及配置指纹是创建响应快照，后续续签不能覆盖这些字段来改变原幂等结果。
-当前仅P0图片SINGLE；素材初始WAITING_UPLOAD，尚不能用于头像或内容关联。查询续签与取消已实现，完成及READY处理流程仍待实现。
+当前仅P0图片SINGLE；素材初始WAITING_UPLOAD，尚不能用于头像或内容关联。查询续签、取消与完成确认已实现，后台媒体校验及READY处理流程仍待实现。
 
 ## 13. 查询上传会话与恢复上传怎样阅读
 
@@ -339,9 +339,42 @@ P0固定SINGLE、partSizeBytes:null、totalParts:1及uploadedParts:[]；分片�
 
 后台回收默认等待原会话到期后600秒，204只确认逻辑取消与持久化入队。前端仍需单独abort文件请求。
 重复取消不递增版本或重复入队；已完成上传及READY/PROCESSING素材不能通过此接口删除。
-创建幂等重放同时检查原会话状态与期限，避免取消后返回旧上传凭证。完成上传接口仍待实现。
+创建幂等重放同时检查原会话状态与期限，避免取消后返回旧上传凭证。
 
-## 15. 资源与测试
+## 15. 完成上传与媒体处理任务怎样阅读
+
+1. `media/controller/UploadCompletionController.java`：POST完成确认，接收版本及幂等键，返回202、TaskReceipt、Location和Retry-After。
+2. `media/dto/CompleteUploadRequest.java`：严格整数、字段白名单和分片模型；当前SINGLE必须省略parts。
+3. `media/service/UploadCompletionService.java`与`service/impl/UploadCompletionServiceImpl.java`：输入校验、独立计数、幂等认领、真实存储检查及事务提交协调。
+4. `media/service/transaction/UploadCompletionTransactionService.java`：claim短事务预留60秒租约；finish重新校验账号→幂等记录→会话→素材并原子更新两种状态、任务及幂等结果。
+5. `media/storage/UploadObjectInspector.java`：复用MinIO SDK执行有超时的HEAD，区分对象缺失409与依赖故障503；网络检查不持有数据库事务。
+6. `media/entity/MediaProcessingTask.java`、UploadCompletionRequestRecord及对应Mapper：V7新增持久化任务、对象快照及完成接口幂等记录。
+7. `media/controller/MediaTaskController.java`：GET /api/v1/tasks/{taskId}，虽然HTTP路径是/tasks，业务及测试仍归media。
+8. `media/service/MediaTaskQueryService.java`、实现及`transaction/MediaTaskQueryTransactionService.java`：复核当前身份、账号状态及任务归属，只返回`dto/MediaTaskView.java`的契约字段。
+9. `media/config/`下UploadCompletion与MediaTaskQuery配置、`media/ratelimit/`对应限流器：两个独立分钟窗口，复用既有Lua算法，不修改创建重放免配额规则。
+
+任务初始PENDING，素材PROCESSING。当前没有媒体worker，不生成进度或READY结果；真实格式、SHA-256和尺寸检查留给后续处理。
+原始上传URL仍可能在到期前写入，后续worker须复核记录的对象版本/ETag/大小等快照，并固定最终可用文件，防止校验后覆盖。
+`TaskReceipt`保留原PENDING受理快照；`MediaTaskView`返回任务当前状态，不暴露存储键、签名指纹或对象快照。
+测试按media/config、controller、service、ratelimit组织，CompleteUploadFlowIT覆盖真实上传、并发、租约恢复及事务回滚。
+`media/service/MediaTaskQueryFlowIT`独立验证任务查询：五种持久化状态、实时读取、时间不变、重试关联、
+跨用户和内部任务隔离、认证后身份变化、依赖故障、独立配额及OpenAPI响应头。
+`media/ratelimit/MediaTaskQueryRateLimiterTest`覆盖Redis连接故障和无法确认的脚本结果。
+
+## 16. 本人素材校验结果怎样阅读
+
+1. `media/controller/MediaAssetController.java`：GET /api/v1/media/assets/{assetId}，需要Bearer，无请求体，返回200及Asset契约。
+2. `media/service/MediaAssetQueryService.java`与`service/impl/MediaAssetQueryServiceImpl.java`：路径校验、独立配额和数据故障映射。
+3. `media/service/transaction/MediaAssetQueryTransactionService.java`：取得当前账号共享锁，复核认证版本和可读状态，按本人范围读取素材。
+4. `media/mapper/MediaAssetMapper.java`的findOwned：SQL同时限定id和owner_id，不接受客户端指定ownerId。
+5. `media/dto/MediaAssetView.java`：仅输出公开元数据字段，优先使用actual值；未知MIME暂用声明值，未知实际大小为0，维度未知为null。
+6. `media/entity/MediaAsset.java`映射V5实际MIME/大小及V8时长/宽高；非视频时长返回null，READY缺少关键实际值时503。
+7. `media/config/MediaAssetQueryConfiguration.java`、Properties及`ratelimit/MediaAssetQueryRateLimiter.java`：app.media.asset-query独立双分钟窗口。
+8. `media/service/MediaAssetQueryFlowIT`、config/ratelimit测试及CompleteUploadFlowIT覆盖只读查询、权限、真实上传链路和故障分支。
+
+查询不访问对象存储，不执行媒体校验或生成READY结果。V8仅新增可空元数据列与约束，历史迁移和已有素材状态不变。
+
+## 17. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。

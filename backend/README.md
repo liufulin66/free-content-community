@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签及取消与后台文件回收，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签、取消与后台文件回收、完成确认、媒体处理任务及本人素材校验结果查询，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -129,7 +129,7 @@ Swagger显式声明验证码申请202、注册201和登录201，与实际成功�
 
 ## 下一步
 
-1. 继续实现上传完成校验及素材READY流程，随后开放头像素材绑定；
+1. 实现媒体处理worker、真实文件校验及素材READY流程，随后开放头像素材绑定；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -576,7 +576,7 @@ Redis配额在SQL事务外检查；查询事务按账号→上传会话顺序取
 续签后的地址已通过真实MinIO PUT验证，保留Content-Type、Content-Length和可选校验和约束。
 前端向MinIO上传时不附带业务Bearer；浏览器用原文件二进制发送，由浏览器生成Content-Length。
 singleUploadTarget的OpenAPI 3.1声明已明确允许对象或null；DTO中已有业务注释保留。
-查询接口复用V5表结构；取消及后台回收见下节。上传完成、异步处理、素材READY及分片续传仍按后续阶段实现。
+查询接口复用V5表结构；取消、后台回收及完成确认见下节。后台媒体校验、素材READY及分片续传仍按后续阶段实现。
 
 2026-11-07验证：`mvn clean verify`通过全部266项测试（152项单元/Web、114项集成），0失败、0错误、0跳过，打包成功。
 本用例新增26项专项检查，覆盖原会话续签、期限裁剪、终态/过期、越权及账号限制、独立配额、并发共享锁、
@@ -598,7 +598,7 @@ WRITE_BLOCKED及DISABLED禁止取消；取消不改变账号资料版本、认�
 
 创建接口的幂等重放也复核原上传状态与期限，取消、完成或过期后不再返回原上传凭证，避免借旧创建键继续操作。
 此类终态重放使用创建接口契约已有的403 PERMISSION_DENIED；取消接口自身的状态和版本冲突仍为409 UPLOAD_STATE_CONFLICT。
-查询接口对CANCELLED返回singleUploadTarget:null。后续完成上传流程同样须拒绝CANCELLED。
+查询接口对CANCELLED返回singleUploadTarget:null。完成上传接口同样拒绝CANCELLED。
 
 配置为`app.media.upload-cancel`，计数窗口和创建、查询独立，所有合法取消请求及重复取消均计数。
 
@@ -633,8 +633,129 @@ UploadCleanupWorker每轮最多认领一个任务，原子更新为RUNNING；存
 失败时重新排队，达到尝试上限保留FAILED；配置变化或资源状态不再允许删除时也保留失败记录，不对外暴露存储内部信息。
 物理清理失败不会撤回已提交的取消结果，后台故障由任务记录和安全日志排查。当前没有公开的清理任务查询或重试接口。
 取消不直接关闭浏览器到MinIO的连接；极长在途传输不受数据库状态强制中断，缓冲并非网络截止保证，后续孤立对象对账需覆盖此类残留。
-完成上传、媒体校验、READY及分片上传/AbortMultipartUpload仍是后续阶段，本次未修改前端上传控件。
+后台媒体校验、READY及分片上传/AbortMultipartUpload仍是后续阶段；完成确认与媒体任务查询见下节，前端上传控件未修改。
 
 2026-11-07验证：`mvn clean verify`通过全部306项测试（170项单元/Web、136项集成），0失败、0错误、0跳过，打包成功。
 本用例新增40项专项检查，覆盖204空响应、重复取消、状态/版本/归属保护、旧创建键凭证拒绝、入队失败回滚、
 认证版本复核、取消与完成条件更新竞争、独立限流、真实MinIO延迟回收、持久化重试、并发认领、租约接管及旧令牌回写拒绝。
+
+## 确认上传完成与媒体任务查询
+
+| 接口 | 请求 | 成功结果 |
+| --- | --- | --- |
+| `POST /api/v1/media/uploads/{uploadId}/completion` | Bearer、Idempotency-Key及CompleteUploadRequest | 202、TaskReceipt、Location和Retry-After |
+| `GET /api/v1/tasks/{taskId}` | Bearer，无请求体 | 200、本人MEDIA_PROCESSING任务 |
+
+当前只支持P0图片SINGLE，完成请求示例：
+
+```json
+{"expectedVersion": 1}
+```
+
+SINGLE必须省略parts，显式null或提交分片清单均返回422；视频和分片完成尚未实现。
+版本必须是1～2147483647的JSON整数；错误类型或未知字段返回400，缺失/非正版本返回422。
+路径ID和幂等键分别按契约限制校验；幂等键长度为16～128字符。
+
+### 存储检查与原子提交
+
+服务先复核本人归属、当前认证版本、账号写权限、会话期限/版本及WAITING_UPLOAD素材，
+保存60秒租约的完成请求预留记录，再在数据库事务外向MinIO执行HEAD检查。
+对象不存在或实际大小与声明不符返回409 UPLOAD_STATE_CONFLICT，保留UPLOADING，允许补传后用原键重试；
+存储Content-Type与声明不符返回415，存储/Redis/数据库不可用返回503。
+
+检查通过后按账号→幂等记录→会话→素材的锁顺序再次复核身份、期限和源信息，
+在同一事务中更新会话COMPLETED及version+1、素材PROCESSING、PENDING媒体任务和成功幂等结果。
+任务入库失败则整个事务回滚。取消若先提交，完成返回409且不留下媒体处理任务；完成若先提交，取消返回409。
+原会话expiresAt、对象路径和创建签名快照不变，完成后的会话查询不再签发上传凭证。
+
+V7新增`media_processing_task`及`media_upload_completion_request`，V1～V6保持不变。
+任务记录服务端获得的对象ETag、版本号、实际大小、Content-Type、修改时间及预期SHA-256，
+不保存完整签名URL，查询DTO也不暴露这些内部存储字段。
+
+HEAD只能核对存储元数据。实际文件格式、内容SHA-256和图片尺寸等仍须由后续worker检查。
+旧上传签名在原有效期内仍可能覆盖源对象，后续worker必须按记录的版本/对象快照读取并复核，
+将最终可用文件固定到受保护的版本或独立存储键后才可设为READY，不能把本次HEAD结果当作完整内容校验。
+
+### 幂等、任务与限流
+
+完成键作用域为调用者＋completeMyUpload＋key，保留24小时，指纹包含uploadId和expectedVersion。
+同键同请求重放原TaskReceipt及Location，不重复创建任务；即使任务状态随后变化，回执仍保留原PENDING受理结果。
+同键不同目标或版本返回409 IDEMPOTENCY_KEY_REUSED；处理中返回409 REQUEST_IN_PROGRESS及Retry-After。
+租约过期可恢复，旧租约持有者不能提交或清除新持有者的结果。新键再次完成已COMPLETED会话返回409。
+
+完成接口采用独立分钟配额：同来源120次、同用户60次，成功幂等重放也计数；不因后续失败退还额度。
+配置为`app.media.upload-completion`，Retry-After默认2秒。
+任务查询采用`app.media.task-query`的独立来源120次/分钟、用户60次/分钟配额，与其他上传接口分别计数。
+创建接口既有“成功幂等重放免计创建配额”规则保持不变。
+
+TaskReceipt.statusUrl和Location均为`/api/v1/tasks/{taskId}`，可直接查询本人的MEDIA_PROCESSING任务。
+其他用户、未知任务和内部邮件/清理任务ID均返回404；WRITE_BLOCKED可以读取任务，不能提交完成确认。
+任务查询返回契约要求的状态、进度、错误字段及时间，不返回存储路径、凭证或内部任务记录。
+
+本阶段没有后台媒体处理worker，任务保持PENDING、progressPercent=0、retryable=false。
+202只表示持久化受理。素材查询已实现；任务执行、实际文件校验、READY推进、失败任务重试及头像绑定后续实现。
+
+专项验证覆盖真实HTTP/MySQL/Redis/MinIO上传与HEAD、原子提交和回滚、所有权、权限变化、
+状态/版本/期限、幂等重放和指纹冲突、独立限流、并发完成/取消、租约恢复及生成的OpenAPI。
+全量验证日志见`.local-dev/complete-upload-full-check.log`。
+
+2026-11-07本阶段验证：`mvn clean verify`通过385项测试（214项单元/Web、171项集成），
+0失败、0错误、0跳过，打包成功；本业务新增59项专项检查，V7迁移已执行。
+
+## 查询本人的媒体处理任务
+
+`GET /api/v1/tasks/{taskId}`需要Bearer，无请求体和Idempotency-Key，成功200及`ApiResponse<Task>`。
+taskId取完成上传返回的TaskReceipt.taskId；不使用uploadId、assetId或客户端指定的ownerId代替当前账号。
+
+调用链为Bearer认证→MediaTaskController→MediaTaskQueryService→独立查询配额→MediaTaskQueryTransactionService。
+事务读取当前账号并取得共享锁，复核authVersion及账号限制，再通过Mapper同时限定任务ID、当前ownerId和MEDIA_PROCESSING类型。
+其他用户、未知任务及内部清理任务ID统一404；WRITE_BLOCKED可读，DISABLED不可读，认证后账号变化也会重新判断。
+
+查询直接读取当前数据库状态，支持PENDING、RUNNING、SUCCEEDED、FAILED和CANCELLED，
+进度、重试关联和公开错误字段均取持久化记录；不会访问MinIO、创建重试任务或改写任务/素材状态及时间。
+返回字段严格由MediaTaskView构造，不序列化存储键、对象快照、签名配置或其他内部字段。
+正常响应包含X-Request-Id及Cache-Control:no-store，401包含WWW-Authenticate，429包含正整数Retry-After；Swagger同步声明。
+
+`app.media.task-query`默认同来源120次/分钟、同用户60次/分钟，配置及环境变量已在application.yml和infra/.env.example列出。
+已认证且ID格式有效的查询均计数，包含404、终态和重复查询；Redis结果无法确认或数据库读取失败返回503。
+
+当前没有媒体处理worker，新完成任务仍保持PENDING。查询支持五种状态不代表后台校验、转码或READY推进已实现。
+MediaTaskQueryFlowIT使用受控数据库记录验证各状态、实时读取、查询不改数据、权限复核、任务隔离、HTTP错误及响应头。
+MediaTaskQueryRateLimiterTest验证Redis故障和不确定结果，完整回归日志为`.local-dev/media-task-query-full-check.log`。
+
+2026-11-07独立验收通过新增21项任务查询检查。`mvn clean verify`通过406项测试
+（216项单元/Web、190项集成），0失败、0错误、0跳过，打包成功；本轮复用V7，无新增迁移。
+
+## 查询本人素材校验结果
+
+`GET /api/v1/media/assets/{assetId}`需要Bearer，无请求体和Idempotency-Key，成功200及`ApiResponse<Asset>`。
+使用创建上传会话或完成确认回执中的真实assetId，不使用uploadId或taskId代替。
+
+接口从认证上下文取得当前账号，按账号共享锁复核authVersion、账号限制及权限，
+再同时限定assetId和ownerId查询素材。其他用户或未知素材统一404；WRITE_BLOCKED可读，DISABLED不可读。
+返回id、ownerId、scene、state、contentType、sizeBytes、durationSeconds、width、height和createdAt，
+不返回文件地址、存储键、声明文件名、SHA-256、签名参数或存储凭证。
+
+状态按数据库如实返回WAITING_UPLOAD、PROCESSING、READY或FAILED。
+实际MIME尚未知时contentType暂用创建时的声明值，实际大小尚未知时sizeBytes为0；
+有实际校验值后优先使用实际值，声明大小不会被用来冒充实际大小。前端必须结合state判断是否已完成校验。
+宽高没有结果时返回null；非视频durationSeconds始终为null，视频时长读取已存储的秒数。
+READY记录若缺少实际MIME或实际大小，返回503 DEPENDENCY_UNAVAILABLE，不伪造READY元数据。
+
+查询只读取持久化元数据，不访问MinIO、不计算尺寸或校验和、不推进状态，也不修改素材记录。
+V8复用V5已有actual_content_type和actual_size_bytes，新增可空duration_seconds、width及height；
+时长使用DECIMAL(20,6)，时长非负、宽高为正数的约束由数据库保证，V1～V7保持不变。
+当前没有媒体校验worker，正常完成确认后的素材仍为PROCESSING，实际元数据由后续worker填写。
+读取受控测试记录中的READY/视频元数据，不代表当前已实现媒体处理或视频上传。
+
+独立配置`app.media.asset-query`默认来源120次/分钟、用户60次/分钟。
+已认证且ID格式有效的重复读取、404和终态查询均计数，与任务查询及其他上传接口分别计数。
+429附正整数Retry-After；Redis故障或结果无法确认、数据库读取失败均返回503。
+所有响应包含X-Request-Id及Cache-Control:no-store，401包含WWW-Authenticate，Swagger声明同步。
+
+专项检查覆盖元数据优先级、四种状态、空值、64位大小和精确时长、权限变化、查询不改数据、独立限流、
+数据库/Redis故障、OpenAPI及真实“创建→MinIO直传→完成确认→素材查询”链路。
+全量验证日志为`.local-dev/media-asset-query-full-check.log`。
+
+2026-11-07验证：本业务新增34项检查；`mvn clean verify`通过440项测试
+（223项单元/Web、217项集成），0失败、0错误、0跳过，打包成功；V8迁移已执行。
