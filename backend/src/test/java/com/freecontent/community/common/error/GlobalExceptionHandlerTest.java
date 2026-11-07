@@ -100,8 +100,20 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
+    @Test
+    void missingRequiredHeaderReturns400AndIdentifiesTheHeader() throws Exception {
+        mockMvc.perform(get("/api/v1/test/header"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"))
+                .andExpect(jsonPath("$.violations[0].location").value("header"))
+                .andExpect(jsonPath("$.violations[0].path").value("Idempotency-Key"));
+    }
+
     @RestController
     static class TestController {
+
+        @GetMapping("/api/v1/test/header")
+        void header(@org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") String key) { }
 
         @PostMapping("/api/v1/test/validate")
         ApiResponse<String> validate(@Valid @RequestBody TestRequest request) {

@@ -85,6 +85,13 @@
             <version>${minio.version}</version>
         </dependency>
 
+        <!-- MinIO 9.0.4引入OkHttp 5.5.1的多平台入口；Maven须显式选择JVM实现。 -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+            <version>5.5.1</version>
+        </dependency>
+
         <!-- Spring Boot 4 专用 starter，不能用 Boot 2/3 的 mybatis-plus-boot-starter -->
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -164,6 +171,11 @@
                         </exclude>
                     </excludes>
                 </configuration>
+            </plugin>
+            <!-- 集成测试在 verify 阶段执行；mvn test 只跑单元/Web测试 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

@@ -58,19 +58,27 @@ mybatis-plus:
 app:
   cors:
     # 多个来源用逗号分隔；前端开发地址不同时通过 CORS_ALLOWED_ORIGINS 覆盖
-    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+    allowed-origins: '${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088,http://127.0.0.1:8088}'
   storage:
     endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
     access-key: ${MINIO_ROOT_USER}
     secret-key: ${MINIO_ROOT_PASSWORD}
     bucket: ${MINIO_BUCKET:free-content}
-    presign-ttl: 10m
-    max-image-bytes: 10485760
-    allowed-image-types:
-      - image/jpeg
-      - image/png
-      - image/webp
-      - image/gif
+    region: ${MINIO_REGION:us-east-1}
+  media:
+    upload-creation:
+      session-ttl-seconds: ${MEDIA_UPLOAD_SESSION_TTL_SECONDS:7200}
+      ip-per-minute-limit: ${MEDIA_UPLOAD_IP_PER_MINUTE_LIMIT:60}
+      user-hourly-limit: ${MEDIA_UPLOAD_USER_HOURLY_LIMIT:100}
+      redis-key-prefix: ${MEDIA_UPLOAD_REDIS_KEY_PREFIX:fc:media:}
+    upload-policy:
+      max-image-bytes: ${MEDIA_MAX_IMAGE_BYTES:10485760}
+      max-video-bytes: ${MEDIA_MAX_VIDEO_BYTES:524288000}
+      allowed-image-mime-types: ${MEDIA_ALLOWED_IMAGE_MIME_TYPES:image/jpeg,image/png,image/webp,image/gif}
+      allowed-video-mime-types: ${MEDIA_ALLOWED_VIDEO_MIME_TYPES:video/mp4}
+      multipart-threshold-bytes: ${MEDIA_MULTIPART_THRESHOLD_BYTES:16777216}
+      max-part-count: ${MEDIA_MAX_PART_COUNT:10000}
+      upload-url-ttl-seconds: ${MEDIA_UPLOAD_URL_TTL_SECONDS:600}
   user:
     profile-update:
       ip-per-minute-limit: ${PROFILE_UPDATE_IP_PER_MINUTE_LIMIT:30}
@@ -137,6 +145,11 @@ management:
 
 server:
   port: 8080
+  # 仅当 TCP 对端属于可信代理网段时才采用 X-Forwarded-For；直接暴露时忽略客户端伪造头。
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: '${TRUSTED_PROXY_PATTERN:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|0:0:0:0:0:0:0:1|::1}'
   error:
     include-message: never
     include-stacktrace: never

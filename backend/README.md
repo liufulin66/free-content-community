@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密及Redis会话认证，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询及私有上传会话创建，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -43,7 +43,8 @@ cd backend
 mvn spring-boot:run
 ```
 
-需要设置的环境变量：`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`RABBITMQ_PASSWORD`，其余有默认值（3307 / 6380 / 5672 / app）。
+需要设置：`MYSQL_PASSWORD`、`REDIS_PASSWORD`、`RABBITMQ_PASSWORD`、`EMAIL_CHALLENGE_MAC_KEY_BASE64`、`EMAIL_CHALLENGE_ENCRYPTION_KEY_BASE64`；媒体上传还需要 `MINIO_ROOT_USER`、`MINIO_ROOT_PASSWORD`。`run-local.ps1` 会加载 `infra/.env`；复制的 `.env.example` 已包含本地示例密钥，生产必须重新生成。
+前端入口 `http://localhost:8088`（nginx）和 `http://localhost:5173`（Vite）已加入默认 CORS 白名单；换端口时通过 `CORS_ALLOWED_ORIGINS` 覆盖并重启后端。
 
 ## 验证
 
@@ -124,7 +125,7 @@ backend/
 
 ## 下一步
 
-1. 接入素材基础能力与上传，开放头像素材绑定；
+1. 继续实现上传会话查询、上传完成校验及素材READY流程，随后开放头像素材绑定；
 2. 按P0契约继续实现内容、修订、审核和媒体业务；
 3. 接入 RabbitMQ + Outbox 事件投递；
 4. 按 operationId 实现 50 个 P0 接口。
@@ -148,7 +149,7 @@ backend/
 初始配置：有效期 600 秒、同邮箱同用途重发间隔 60 秒、邮箱每小时 5 次、
 连接来源每小时 100 次。邮箱次数跨用途共享；小时窗口从该计数首次申请开始。
 Redis Lua 原子检查配额，计数表示申请次数，数据库失败不自动退还配额。
-来源默认取 TCP 连接地址，不直接信任客户端传入的 `X-Forwarded-For`。
+来源默认取 TCP 对端地址；仅当对端属于可信代理网段（`TRUSTED_PROXY_PATTERN`）时才采用 `X-Forwarded-For`，直接暴露时忽略客户端伪造头。
 经过反向代理时，需要按实际可信代理边界配置来源解析，避免所有访问共用代理IP配额。
 
 同邮箱同用途重发会在事务内让旧申请失效、取消旧待发送任务并建立新申请。
@@ -163,21 +164,26 @@ SMTP 默认最多尝试 3 次，失败按 5 秒、10 秒等间隔退避；任务
 - `EMAIL_CHALLENGE_MAC_KEY_BASE64`：32 字节随机值的 Base64，用于 HMAC-SHA256。
 - `EMAIL_CHALLENGE_ENCRYPTION_KEY_BASE64`：另一个 32 字节随机值的 Base64，用于 AES-GCM。
 
-本次开发已为现有本地环境生成并保存密钥。通过 `run-local.ps1` 运行会读取该文件；
+`.env.example` 已包含仅用于本地开发的示例值；复制成 `.env` 即可启动。生产环境必须用
+`openssl rand -base64 32` 重新生成两个不同值。`run-local.ps1` 会读取该文件；
 通过 IDE 直接运行时，需要配置相同环境变量。密钥须在重启间保持稳定。
 当前实现使用单组带标识的密钥；更换前应处理完旧申请和任务，不能直接丢弃旧密钥。
 其他可调参数见 `application.yml` 的 `app.auth.email-challenge`。
 验证码申请表仅保存 HMAC 摘要，任务暂存绑定任务ID和申请ID的 AES-GCM 密文，
 原始验证码和密钥不进入接口响应或普通日志。
 
-普通测试与显式集成测试：
+普通测试与集成测试：
 
 ```powershell
-# 不连接中间件的单元/Web测试
-mvn "-Dtest=*Test" test
+# 不连接中间件的单元/Web测试（Surefire）
+mvn test
 
-# 先加载本地环境变量，再验证真实MySQL事务回滚
-mvn "-Dtest=EmailChallengeTransactionIT" test
+# 加载 infra/.env 并启动中间件后，运行单元测试和全部 *IT（Surefire + Failsafe）
+$env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
+mvn verify
+
+# 没有中间件时只验证单元/Web测试和打包
+mvn -DskipITs verify
 ```
 
 当前已完成验证码申请、邮件投递、邮箱验证码注册、密码登录、退出及验证码重置密码。
@@ -218,17 +224,17 @@ BC版本与当前MinIO间接依赖保持一致，并已显式声明。哈希带 
 `REGISTRATION_NOT_ALLOWED`，不消费新验证码。并发使用同一申请最多一次成功。
 
 注册进入业务后的初始限额为来源每分钟30次、邮箱每小时20次，均可配置。
-来源使用TCP连接地址，与验证码申请接口使用相同的可信代理边界。
+来源使用TCP对端地址，与验证码申请接口共用同一套可信代理边界。
 配置在 `app.auth.registration`；新增表由 `V3__user_account_and_roles.sql` 管理。
 
 ```powershell
 # 不连接中间件的单元/Web测试
-mvn "-Dtest=*Test" test
+mvn test
 
-# 加载infra/.env后运行全部测试（包括真实MySQL的事务、并发与错码锁定测试）
+# 加载infra/.env并启动中间件后运行全部测试（含真实MySQL/Redis/MinIO）
 # 验证时关闭后台投递，避免测试上下文处理其他待发送邮件
 $env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
-mvn "-Dtest=*Test,*Tests,*IT" test
+mvn verify
 ```
 
 ## 密码登录与Redis会话
@@ -266,7 +272,7 @@ WRITE_BLOCKED允许登录、阅读及账号安全操作，canCreate=false，业�
 
 限流在数据库查询和密码计算之前执行，所有获准尝试均计数，包括错误密码与未知邮箱。
 超限429附Retry-After；Redis/MySQL故障或无法确认写入结果返回503，不签发无法确认的凭证。
-来源不直接信任X-Forwarded-For；部署代理时需按真实可信代理边界调整来源解析。
+来源仅在TCP对端属于可信代理网段时采用X-Forwarded-For；生产部署通过TRUSTED_PROXY_PATTERN配置真实代理网段。
 
 Token由32字节安全随机数生成，原文只在登录响应中返回；Redis键使用SHA-256摘要，
 会话保存sessionId、userId、authVersion、创建/过期/活动时间和设备说明。
@@ -342,7 +348,7 @@ app.auth.password-reset初始配置：
 | redis-key-prefix / PASSWORD_RESET_REDIS_KEY_PREFIX | fc:auth: |
 
 提交配额以独立的{password-reset}键空间计数，计数窗口从首次获准请求开始，超限429附Retry-After。
-来源取TCP连接地址，不直接信任X-Forwarded-For。验证码发送仍使用原有发送配额；会话清理沿用登录会话键空间。
+来源取TCP对端地址，仅当对端属于可信代理网段时采用X-Forwarded-For。验证码发送仍使用原有发送配额；会话清理沿用登录会话键空间。
 不新增数据表或迁移，复用现有挑战、邮件任务、账号和auth_version字段。
 
 2026-11-06验证：全部129项测试通过，覆盖真实HTTP申请挑战、重置、旧密码与旧Token拒绝、
@@ -368,7 +374,7 @@ Redis清理失败后的逻辑撤销、清理期间新登录保留，以及注册
 app.user.password-change配置为同来源每分钟30次、同用户每小时20次，采用独立{password-change}配额键。
 环境变量为PASSWORD_CHANGE_IP_PER_MINUTE_LIMIT、PASSWORD_CHANGE_USER_HOURLY_LIMIT和PASSWORD_CHANGE_REDIS_KEY_PREFIX。
 所有获准尝试均计数，包括错误旧密码，超限429附Retry-After；不会因此锁定账号。
-来源取TCP连接地址，不直接信任X-Forwarded-For。不新增表或迁移，复用现有账号与认证版本字段。
+来源取TCP对端地址，仅当对端属于可信代理网段时采用X-Forwarded-For。不新增表或迁移，复用现有账号与认证版本字段。
 
 当前账号改密的DTO、Service接口及实现、事务、限流、配置均在user模块，测试同样归user。
 密码哈希、认证上下文及会话存储继续复用auth的既有安全能力；不因技术复用改变用户业务归属。
@@ -420,14 +426,111 @@ SQL列由后端白名单固定，值使用参数绑定；WHERE包含用户ID、e
 接口返回数据库更新后的资料，而非认证阶段的旧CurrentUser快照。WRITE_BLOCKED或DISABLED不能修改资料。
 认证状态在过滤器验证后发生变化时，事务复核会拒绝写入；依赖故障返回503，响应仍遵循Problem Details及no-store规范。
 
-头像阶段范围已确认：本次不创建素材表或上传接口。avatarAssetId:null和省略头像均可正常处理；
+资料编辑阶段先支持清空头像；后续新增的素材登记及创建上传会话见下文。avatarAssetId:null和省略头像均可正常处理；
 所有非空头像ID请求返回503 DEPENDENCY_UNAVAILABLE，包括同时提交昵称/简介的请求，整次修改不发生部分保存。
 后续素材模块就绪后，再接入头像归属本人、AVATAR用途与READY状态的校验，不能绕过这些条件直接绑定ID。
 
 app.user.profile-update配置：同来源每分钟30次、同用户每小时20次，独立{profile-update}配额键。
 环境变量为PROFILE_UPDATE_IP_PER_MINUTE_LIMIT、PROFILE_UPDATE_USER_HOURLY_LIMIT和PROFILE_UPDATE_REDIS_KEY_PREFIX，
 默认Redis前缀fc:user:。所有进入业务的有效请求均计数，包含相同值保存及版本冲突；超限429附Retry-After。
-来源使用TCP连接地址，不直接信任X-Forwarded-For。
+来源使用TCP对端地址，仅当对端属于可信代理网段时采用X-Forwarded-For。
 
 2026-11-06验证：全部183项测试通过，覆盖真实HTTP/MySQL/Redis的部分更新、空值语义、Unicode边界、
 SQL参数绑定、相同值不增版本、并发版本冲突、事务内身份/状态复核、头像请求不部分保存、提交限流及API文档字段约束。
+
+## 获取当前上传限制与签名策略
+
+`GET /api/v1/media/upload-policy`需要有效Bearer身份，无请求体，返回200及`ApiResponse<UploadPolicy>`。
+接口属于`media`模块，Controller依赖UploadPolicyService接口，由service.impl中的实现读取配置并构造独立响应DTO。
+策略读取不访问对象存储，不创建上传会话，不修改账号资料或延长登录会话；认证仍需查询Redis及MySQL。
+WRITE_BLOCKED允许查询；缺少或失效身份返回401，DISABLED返回403，认证依赖不可用返回503。
+成功及失败响应继续使用统一requestId和no-store规范，不返回桶名、内部存储地址、密钥或签名URL。
+
+配置集中在`app.media.upload-policy`，启动时校验数值范围，并保留不可变的MIME类型列表：
+
+| 配置 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| max-image-bytes | MEDIA_MAX_IMAGE_BYTES | 10485760（10 MiB） |
+| max-video-bytes | MEDIA_MAX_VIDEO_BYTES | 524288000（500 MiB） |
+| allowed-image-mime-types | MEDIA_ALLOWED_IMAGE_MIME_TYPES | image/jpeg,image/png,image/webp,image/gif |
+| allowed-video-mime-types | MEDIA_ALLOWED_VIDEO_MIME_TYPES | video/mp4 |
+| multipart-threshold-bytes | MEDIA_MULTIPART_THRESHOLD_BYTES | 16777216（16 MiB） |
+| max-part-count | MEDIA_MAX_PART_COUNT | 10000 |
+| upload-url-ttl-seconds | MEDIA_UPLOAD_URL_TTL_SECONDS | 600（10分钟） |
+
+环境变量中的MIME列表以逗号分隔。配置在应用启动时绑定，修改后需重启后端。
+图片和视频大小范围为1～9007199254740991字节，分片阈值及签名秒数为正整数，分片数范围为1～10000。
+原先app.storage下未绑定的图片大小、类型及签名时长预留配置已迁入media；app.storage继续保存存储连接参数。
+
+该节描述策略查询；私有上传会话创建见下节。返回视频、分片参数不代表视频或分片上传接口已经实现。
+创建会话已复用这组配置；后续完成上传还须核验实际大小、类型、归属和READY状态，前端检查不能替代服务端检查。
+非空头像绑定仍等待素材模块，不因本接口上线而开放。
+
+专项检查覆盖配置覆盖、数值范围、认证状态、响应字段白名单、真实HTTP/MySQL/Redis及生成的OpenAPI必填字段和范围。
+
+2026-11-07验证：`mvn clean "-Dtest=*Test,*Tests,*IT" package`通过全部199项测试（新增16项），
+0失败、0错误、0跳过，打包成功。按TDD验证了缺失路由404、非法数值配置、列表可变性及OpenAPI约束缺失，修复后回归通过。
+
+## 创建私有文件上传会话
+
+`POST /api/v1/media/uploads`需要Bearer身份及16～128字符的`Idempotency-Key`，成功201，
+返回`ApiResponse<UploadSession>`和`Location: /api/v1/media/uploads/{uploadId}`。
+请求接收scene、fileName、contentType、整数sizeBytes及可选的64位十六进制sha256。
+用户取认证上下文，来源取可信代理后的客户端地址，不接受ownerId、存储路径或存储桶等额外字段。
+
+当前按P0只接受AVATAR、CONTENT_IMAGE、REPORT_ATTACHMENT用途的策略白名单图片，默认最大10 MiB。
+CONTENT_VIDEO、非白名单MIME及需要分片的申请返回415，图片超限返回413。
+MIME去首尾空白并转小写，sha256转小写，文件名仅保存显示值；数值字符串、小数及错误字段类型拒绝，避免隐式转换。
+缺失必填请求头返回400 MALFORMED_REQUEST，幂等键长度错误及字段约束错误返回422。
+
+业务配置为`app.media.upload-creation`：
+
+| 配置 | 环境变量 | 默认值 |
+| --- | --- | --- |
+| session-ttl-seconds | MEDIA_UPLOAD_SESSION_TTL_SECONDS | 7200（2小时） |
+| ip-per-minute-limit | MEDIA_UPLOAD_IP_PER_MINUTE_LIMIT | 60 |
+| user-hourly-limit | MEDIA_UPLOAD_USER_HOURLY_LIMIT | 100 |
+| redis-key-prefix | MEDIA_UPLOAD_REDIS_KEY_PREFIX | fc:media: |
+
+上传签名沿用app.media.upload-policy.upload-url-ttl-seconds，默认600秒，且不会超过会话有效期。
+Redis Lua原子检查用户小时窗口及TCP来源分钟窗口；拒绝时两个计数都不增加，429返回Retry-After。
+窗口从各计数首次获准申请时起算。
+认领后确认是新请求才计数；重放和同键不同请求直接返回，不消耗额度。新请求的策略拒绝及后续数据库失败不自动退还额度。
+仅在TCP对端属于可信代理网段时采用X-Forwarded-For；可信网段由TRUSTED_PROXY_PATTERN配置。
+
+### 持久化、并发及故障恢复
+
+V5迁移新增media_asset、media_upload_session和media_upload_request，保留V1～V4及既有账号数据。
+素材保存声明大小、声明类型及可选摘要，初始WAITING_UPLOAD，实际校验字段尚为空；上传会话初始UPLOADING、version=1。
+素材ID、上传ID及private/{userId}/{assetId}/source对象键均由服务端分配，不使用原始文件名作为路径。
+
+处理顺序：检查请求及限流 → 认领幂等记录并提交短事务 → 检查当前文件策略并准备签名 → 最终写事务 → 返回201。
+两个事务都锁定并复核账号authVersion、ACTIVE及邮箱验证状态，按账号行再幂等记录的顺序加锁。
+最终事务把素材、上传会话和幂等成功结果一起提交；任一数据库写入失败整体回滚。
+数据库和Redis不构成分布式事务，签名准备不占用数据库写事务。
+
+幂等作用域为用户＋createUpload＋键，24小时有效，数据库保存键摘要和规范化请求指纹。
+同键同请求重放原资源、状态、Location及签名快照，且不消耗限流额度；同键不同请求返回409 IDEMPOTENCY_KEY_REUSED。
+处理中返回409 REQUEST_IN_PROGRESS和Retry-After。处理租约60秒，过期后重试可接管，最终提交复核租约令牌，防止旧请求覆盖新结果。
+准备失败只释放本次持有的PROCESSING记录；数据库故障无法释放时，后续重试依靠租约恢复。
+24小时过期后允许重新使用该键创建新资源，原资源保留。过期幂等记录按请求惰性回收，全量清理随后续后台清理流程完善。
+
+### 签名与实际文件上传
+
+UploadSigner使用既有MinIO SDK的SigV4实现，固定创建时的签名时间、有效期、对象、Content-Type和Content-Length；请求提供sha256时还绑定x-amz-checksum-sha256，支持重建相同结果。
+Maven显式补齐与MinIO 9.0.4匹配的okhttp-jvm 5.5.1；多平台入口包本身不包含JVM HTTP实现。
+存储配置继续使用app.storage及既有MINIO_*变量，新增MINIO_REGION（默认us-east-1）。
+数据库只保存签名参数及配置指纹，不保存完整签名URL或存储密钥；凭证类和上传目标的toString已脱敏。
+更换存储地址、桶、区域或密钥后，旧签名快照不能用新配置静默重建，重放会返回503。
+
+生成签名是本地计算，不逐次探测MinIO在线状态；创建成功表示业务记录已经提交，实际文件传输由客户端执行。
+前端按singleUploadTarget的PUT、URL和headers发送文件二进制（必须带Content-Type、Content-Length；提供sha256时还要带x-amz-checksum-sha256），不附带业务Bearer。
+签名约束方法、对象、Content-Type及Content-Length，实际大小不符会在写入前被MinIO拒绝；提供sha256时校验和也会被验证。真实格式及后续READY校验仍由完成上传流程负责。
+签名过期与会话过期独立，幂等重放保留原签名到期时间；后续会话查询接口负责在会话有效时重新签发地址。
+
+本次只实现创建会话和私有素材登记。会话查询、完成、取消、异步校验及READY流程仍待实现，非空头像绑定继续按原规则拒绝。
+
+2026-11-07验证：`mvn verify`通过全部239项测试（145 单元/Web + 94 集成），
+0失败、0错误、0跳过。覆盖真实HTTP/MySQL/Redis/MinIO上传、签名篡改拒绝、私有读取拒绝、
+幂等重放/冲突、重放不消耗限流额度、受信代理转发头来源、Content-Length与可选SHA-256校验和、
+8并发去重、处理中409、租约接管及旧请求隔离、事务回滚、认证状态复核、限流、严格类型与生成的OpenAPI。

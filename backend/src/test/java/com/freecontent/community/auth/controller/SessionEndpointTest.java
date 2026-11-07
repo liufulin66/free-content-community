@@ -229,6 +229,17 @@ class SessionEndpointTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void corsPreflightAllowsLocalNginxFrontendOrigins() throws Exception {
+        for (String origin : List.of("http://localhost:8088", "http://127.0.0.1:8088")) {
+            mvc.perform(options("/api/v1/auth/sessions").header("Origin", origin)
+                            .header("Access-Control-Request-Method", "POST")
+                            .header("Access-Control-Request-Headers", "Content-Type"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+        }
+    }
+
     private SessionPrincipal principal(boolean blocked) {
         UserAccount account = LoginTestSupport.account();
         if (blocked) account.setAccountStatus(UserAccount.Status.WRITE_BLOCKED);

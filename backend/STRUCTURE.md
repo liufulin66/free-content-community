@@ -1,6 +1,6 @@
 # 后端结构与阅读指南
 
-后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`或`user`，
+后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`、`user`或`media`，
 再按控制层、业务入口、数据访问等职责定位代码。
 
 后续新增或修改代码遵循项目根目录的[业务结构约定](../AGENTS.md)：同一用例的DTO、Service、事务、限流、配置和测试归所属业务模块。
@@ -13,6 +13,7 @@
 | --- | --- |
 | `auth` | 验证码、注册、密码登录、退出、验证码重置及Redis会话认证 |
 | `user` | 当前账号与用户资料业务、修改当前账号密码、角色及数据库访问 |
+| `media` | 上传策略、私有上传会话创建与素材登记 |
 | `common` | 统一响应、异常、请求标识、通用校验 |
 | `config` | Web、MyBatis、OpenAPI等全局配置 |
 
@@ -274,11 +275,39 @@ WRITE_BLOCKED可以查询，canCreate=false；DISABLED返回403，无效或已�
    以if/set动态生成字段白名单内的SET，值使用参数绑定；WHERE同时限定用户、资料版本、认证版本及ACTIVE状态。
 
 本期支持昵称、简介和清空头像；省略字段保持原值，bio空字符串表示清空简介，avatarAssetId:null表示清空头像。
-素材模块尚未接入，所有非空头像ID返回503，整个请求不发生部分保存；后续接入本人READY的AVATAR素材校验后再开放绑定。
+头像素材校验尚未接入，所有非空头像ID返回503，整个请求不发生部分保存；后续接入本人READY的AVATAR素材校验后再开放绑定。
 支持字段通过校验且值未变化时，返回200且不修改version或updated_at；版本过时始终409 RESOURCE_VERSION_CONFLICT，并返回currentVersion。
 实际修改递增资料version，不修改authVersion、密码或会话有效期。配置见app.user.profile-update，默认来源30次/分钟、用户20次/小时。
 
-## 11. 资源与测试
+## 11. 获取上传策略怎样阅读
+
+1. `media/controller/MediaController.java`的getUploadPolicy方法：
+   `GET /api/v1/media/upload-policy`，需要Bearer身份，返回200及统一响应包装。
+2. `media/service/UploadPolicyService.java`声明接口，`media/service/impl/UploadPolicyServiceImpl.java`
+   读取当前生效配置，构造只包含契约7个字段的`media/dto/UploadPolicy.java`。
+3. `media/config/UploadPolicyProperties.java`绑定`app.media.upload-policy`，在启动时校验范围并复制为不可变列表；
+   `UploadPolicyConfiguration`注册配置。存储连接参数仍归app.storage，不进入API响应。
+4. `src/test/java/com/freecontent/community/media/`按config、controller、service对应组织配置、Web及真实HTTP集成测试。
+
+本接口不需要Mapper或数据库事务，也不请求MinIO；身份验证继续复用auth中的过滤器及会话能力。
+WRITE_BLOCKED可以读取策略。这里只提供策略查询，后续实际上传和素材绑定仍须按相同策略校验。
+
+## 12. 创建上传会话怎样阅读
+
+1. `media/controller/MediaController.java`的createUpload：`POST /api/v1/media/uploads`，需要Bearer及Idempotency-Key，成功201并返回Location。
+2. `media/dto/CreateUploadRequest.java`及`media/validation/UploadSizeDeserializer.java`：字段白名单、用途、Unicode长度、严格整数及摘要校验。
+3. `media/service/UploadService.java`及`media/service/impl/UploadServiceImpl.java`：主业务入口，依次完成限流、幂等认领、策略检查、签名准备和事务提交。
+4. `media/ratelimit/UploadCreationRateLimiter.java`及`redis/upload-creation-rate-limit.lua`：用户小时窗口和TCP来源分钟窗口的原子配额检查。
+5. `media/service/transaction/UploadTransactionService.java`：claim先提交60秒租约；complete复核账号和租约令牌，同事务写入素材、会话及成功结果；release只清理自己持有的未完成请求。
+6. `media/storage/UploadSigner.java`：复用MinIO SDK SigV4，绑定对象、PUT方法、Content-Type及Content-Length，存在sha256时绑定x-amz-checksum-sha256；按固定时间参数重建幂等响应，不保存完整签名地址。
+7. `media/entity/`和`media/mapper/`对应V5新增的media_asset、media_upload_session和media_upload_request。
+8. `media/config/UploadCreationProperties.java`绑定app.media.upload-creation；StorageProperties绑定既有app.storage；UploadCreationConfiguration注册配置。
+
+同一账号操作采用账号行→幂等行的锁顺序。准备签名不持有写事务，晚到的旧请求必须通过租约令牌校验才能提交。
+会话的签名时间、TTL及配置指纹是创建响应快照，后续续签不能覆盖这些字段来改变原幂等结果。
+当前仅P0图片SINGLE；素材初始WAITING_UPLOAD，尚不能用于头像或内容关联。会话查询、完成、取消及READY处理流程仍待实现。
+
+## 13. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。
@@ -286,11 +315,12 @@ WRITE_BLOCKED可以查询，canCreate=false；DISABLED返回403，无效或已�
 - `src/test/java/`：按生产包结构组织单元测试、Web测试及事务集成测试。
 
 移动包或重命名后先清理旧编译产物，防止旧包的class残留被Spring扫描。
-加载本地环境变量后，可以运行：
+`mvn test` 只运行不依赖中间件的单元/Web测试；`*IT` 由 Failsafe 在 `verify` 阶段执行。
+加载本地环境变量并启动中间件后，可以运行：
 
 ```powershell
 $env:EMAIL_CHALLENGE_DELIVERY_ENABLED = "false"
-mvn clean "-Dtest=*Test,*Tests,*IT" test
+mvn verify
 ```
 
 测试关闭邮件后台投递；集成测试只操作各自生成的测试记录。

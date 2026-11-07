@@ -14,6 +14,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -92,6 +93,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ProblemDetailResponse> handleMissingParameter(MissingServletRequestParameterException ex) {
         return problem(ErrorCode.MALFORMED_REQUEST, "缺少必填参数",
                 List.of(ProblemDetailResponse.Violation.query(ex.getParameterName(), "缺少必填参数")), null, null);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ProblemDetailResponse> handleMissingHeader(MissingRequestHeaderException ex) {
+        return problem(ErrorCode.MALFORMED_REQUEST, "缺少必填请求头",
+                List.of(new ProblemDetailResponse.Violation("header", ex.getHeaderName(), "缺少必填请求头")), null, null);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
