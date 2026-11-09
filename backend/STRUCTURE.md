@@ -1,6 +1,6 @@
 # 后端结构与阅读指南
 
-后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`、`user`或`media`，
+后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`、`user`、`media`或`tag`，
 再按控制层、业务入口、数据访问等职责定位代码。
 
 后续新增或修改代码遵循项目根目录的[业务结构约定](../AGENTS.md)：同一用例的DTO、Service、事务、限流、配置和测试归所属业务模块。
@@ -14,6 +14,7 @@
 | `auth` | 验证码、注册、密码登录、退出、验证码重置及Redis会话认证 |
 | `user` | 当前账号与用户资料业务、修改当前账号密码、角色及数据库访问 |
 | `media` | 上传策略、私有上传会话创建、查询续签、取消、文件回收、完成确认、任务及素材查询 |
+| `tag` | 公开有效标签；管理员创建、详情、分页、修改与启停；名称唯一性、创建幂等及独立限流 |
 | `common` | 统一响应、异常、请求标识、通用校验 |
 | `config` | Web、MyBatis、OpenAPI等全局配置 |
 
@@ -123,6 +124,14 @@ SessionAuthenticationService、事务组件、限流器和安全工具保留具�
 
 全局`config/WebConfig.java`统一配置CORS与JSON类型边界，阻止数字/布尔值转为字符串以及枚举序号转换。
 字段内容及空值仍由所属业务模块的DTO校验，不把业务流程放入全局配置。
+
+Controller使用`common/api/ApiErrorResponses.java`声明额外业务错误，通用OpenAPI响应生成逻辑集中在`config/ProblemResponseCustomizer.java`。
+生成器复用ErrorCode和ProblemDetailResponse，按接口分别生成错误集合及公共响应头；成功DTO与专有头留在所属Controller。
+公开接口必须显式关闭公共错误集合，生成器会拒绝公开接口使用默认公共错误；该注解仅影响文档，实际异常转换仍由common/error/GlobalExceptionHandler负责。
+公共403集合仅包含PERMISSION_DENIED和ACCOUNT_RESTRICTED；邮箱未验证的专用错误由登录、创建上传按契约显式声明。
+BearerSessionFilter在认证失败边界按方法和路径适配邮箱未验证错误，其他已实现受保护接口返回PERMISSION_DENIED；业务事务仍独立复核邮箱状态，文档注解不参与鉴权。
+config/CommonErrorDocumentationIT使用测试资源contracts/api-v1-error-responses.json中的固定契约快照核对所有现有接口的响应状态、错误码及公共响应头，新增接口需同步更新快照。
+所有`/api/v1/admin/**`请求统一经`auth/security/AdminAuthorizationManager.java`按方法与路径判定角色，未登记路径默认拒绝。
 
 `service.transaction` 属于业务层内部。HTTP控制层调用主Service，
 主Service接口的实现协调限流、密码计算及事务组件。Mapper承接数据库操作。
@@ -374,7 +383,58 @@ P0固定SINGLE、partSizeBytes:null、totalParts:1及uploadedParts:[]；分片�
 
 查询不访问对象存储，不执行媒体校验或生成READY结果。V8仅新增可空元数据列与约束，历史迁移和已有素材状态不变。
 
-## 17. 资源与测试
+## 17. 创建标签怎样阅读
+
+1. `tag/controller/TagCreationController.java`：POST /api/v1/admin/tags，返回201及Tag契约和Location。
+2. `tag/dto/TagWriteRequest.java`、TagView及`support/TagNames.java`：严格输入、默认值、Unicode首尾空白和响应白名单。
+3. `tag/service/TagCreationService.java`与`service/impl/TagCreationServiceImpl.java`：冻结规范化输入、指纹、claim、独立配额和finish协调。
+4. `tag/service/transaction/TagCreationTransactionService.java`：复核当前账号、ADMIN角色及租约，标签与幂等快照同事务提交。
+5. `tag/entity/`、`tag/mapper/`对应V9的community_tag与tag_creation_request，数据库名称唯一索引裁决跨管理员竞争。
+6. `tag/config/TagCreationProperties.java`绑定app.tag.creation；Configuration同时补充生成OpenAPI中的空字符串默认值。
+7. `tag/ratelimit/TagCreationRateLimiter.java`：复用已有Lua算法，独立来源分钟和管理员小时窗口，成功重放免配额。
+8. `auth/config/SecurityConfiguration.java`将`/api/v1/admin/**`统一交给`auth/security/AdminAuthorizationManager`；该入口按方法与路径登记允许角色，未登记路径默认拒绝，tag事务仍复核ADMIN角色。`user/mapper/UserRoleMapper.java`提供角色共享锁读取，业务流程仍全部归tag。
+
+claim使用局部READ_COMMITTED避免缺失幂等键的间隙锁竞争，账号行锁保护同一调用者；finish保留独立写事务并再次授权。
+测试目录按tag/controller、service、config和ratelimit对应生产模块；TagCreationFlowIT通过真实SQL并发屏障验证一方201、另一方409。
+角色由受控初始化或后续管理流程授予，不提供公开自助ADMIN注册。标签详情、分页和修改见后续章节。
+
+## 18. 管理员标签详情与列表怎样阅读
+
+1. `tag/controller/TagQueryController.java`：GET /api/v1/admin/tags/{tagId}返回TagView，GET /api/v1/admin/tags返回TagPageView；仅详情在公共错误外声明RESOURCE_NOT_FOUND。
+2. `auth/security/AdminAuthorizationManager.java`：为两个GET分别登记ADMIN，未登记后台路由仍默认拒绝。
+3. `tag/service/TagQueryService.java`与`service/impl/TagQueryServiceImpl.java`：身份、路径及分页参数校验，共享查询配额、事务调用及依赖错误转换。
+4. `tag/service/transaction/TagQueryTransactionService.java`：共享账号与角色复核；详情按主键读取，列表按创建时间和ID倒序，用同一REPEATABLE_READ快照读取总数与分页记录。
+5. `tag/config/TagQueryProperties.java`、Configuration及`ratelimit/TagQueryRateLimiter.java`：列表与详情共享app.tag.query来源/管理员分钟窗口，使用独立tag-query键，不与创建配额混用。
+6. `tag/dto/TagPageView.java`只返回items、page、pageSize、total，items复用TagView；复用现有MyBatis-Plus分页插件，BigInteger页码越界直接返回空页。
+7. `tag/service/TagQueryFlowIT`、TagListFlowIT及config/ratelimit测试覆盖真实HTTP、MySQL、Redis；config/CommonErrorDocumentationIT按已同步的契约快照核对两个接口的完整错误集合。
+
+查询返回当前五个Tag字段，不修改标签状态、版本或时间；WRITE_BLOCKED管理员可读，禁用账号和撤权请求被拒绝。复用已有V9表，无新增迁移。
+
+## 19. 管理员修改或停用标签怎样阅读
+
+1. `tag/controller/TagUpdateController.java`：PATCH /api/v1/admin/tags/{tagId}，返回200及TagView，额外声明404、版本/名称冲突和请求体错误。
+2. `tag/dto/TagUpdateRequest.java`：严格JSON、字段存在标记、Unicode长度与可选字段；expectedVersion的Schema显式绑定Integer，避免JsonNode严格setter影响文档类型。
+3. `tag/service/TagUpdateService.java`与`service/impl/TagUpdateServiceImpl.java`：身份、路径及PATCH输入校验、独立限流、事务调用和依赖错误转换。
+4. `tag/service/transaction/TagUpdateTransactionService.java`：账号→角色→标签固定锁序；先授权和版本校验，再处理同值与真实修改。重名和数据库异常使整次事务回滚。
+5. `tag/mapper/TagMapper.java`新增标签FOR UPDATE查询及仅更新所提供字段的条件SQL；id和expectedVersion必须匹配，版本与updated_at随真实修改一起更新。
+6. `tag/config/TagUpdateProperties.java`、Configuration及`ratelimit/TagUpdateRateLimiter.java`：app.tag.update独立来源分钟、管理员小时窗口，复用已有Lua和独立tag-update键。
+7. `tag/service/TagUpdateFlowIT`、config/ratelimit测试验证真实HTTP、MySQL、Redis及SQL屏障并发；config/CommonErrorDocumentationIT按已同步快照核对updateTag。
+
+停用保留记录，允许重新启用和管理员之间管理；不更新原创建快照、不增加依赖或迁移。新审核禁止引用停用标签的消费逻辑由后续内容/审核模块实现。
+
+## 20. 公开有效标签怎样阅读
+
+1. `tag/controller/PublicTagController.java`：GET /api/v1/tags，返回200及TagListView，仅含items；显式关闭已认证公共错误集合。
+2. `auth/security/BearerSessionFilter.PUBLIC_READ_PATHS`与SecurityConfiguration：仅按GET和精确路径公开访问并跳过Bearer认证，错误或失效凭证不影响公开读取；后台路径不受影响。
+3. `tag/service/TagQueryService.java`与`service/impl/TagQueryServiceImpl.java`：复用查询入口，公开分支先独立来源限流，再拒绝未知查询参数，映射依赖故障为503。
+4. `tag/service/transaction/TagQueryTransactionService.activeTags`：只读事务过滤ACTIVE，按名称和ID升序，复用TagView转换，不调用后台授权方法。
+5. `tag/config/ActiveTagQueryProperties.java`、Configuration及`ratelimit/ActiveTagQueryRateLimiter.java`：app.tag.active-query来源分钟窗口，不使用用户配额，与后台计数隔离。
+6. `redis/tag-active-query-rate-limit.lua`：一个来源计数键，原子检查、计数和设置60秒到期；无法确认执行结果时拒绝放行。
+7. `tag/service/ActiveTagFlowIT`及config/ratelimit测试覆盖真实HTTP、MySQL、Redis、后台启停联动与并发配额；CommonErrorDocumentationIT按快照核对公开错误集合。
+
+公开查询不分页、不缓存标签数据；停用标签不返回。账号状态不改变该公开接口的可读性，所有后台安全检查继续在原用例执行。
+
+## 21. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。

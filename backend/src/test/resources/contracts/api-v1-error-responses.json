@@ -1,0 +1,674 @@
+{
+  "source": "api-v1-20261103-01a19f20/openapi.json",
+  "sourceSha256": "e3359e24fa1182287772810ac16968e83533022ed40f721f239ba3b58af01b21",
+  "operations": {
+    "createEmailChallenge": {
+      "path": "/api/v1/auth/email-challenges",
+      "method": "post",
+      "responses": {
+        "202": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "registerAccount": {
+      "path": "/api/v1/auth/registrations",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "CHALLENGE_INVALID",
+          "MALFORMED_REQUEST"
+        ],
+        "409": [
+          "REGISTRATION_NOT_ALLOWED"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "createSession": {
+      "path": "/api/v1/auth/sessions",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_FAILED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "EMAIL_VERIFICATION_REQUIRED"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "deleteCurrentSession": {
+      "path": "/api/v1/auth/sessions/current",
+      "method": "delete",
+      "responses": {
+        "204": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "resetPassword": {
+      "path": "/api/v1/auth/password-resets",
+      "method": "post",
+      "responses": {
+        "204": [],
+        "400": [
+          "CHALLENGE_INVALID",
+          "MALFORMED_REQUEST"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "changePassword": {
+      "path": "/api/v1/me/password",
+      "method": "put",
+      "responses": {
+        "204": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_FAILED",
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getCurrentUser": {
+      "path": "/api/v1/me",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "updateCurrentUser": {
+      "path": "/api/v1/me",
+      "method": "patch",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "MEDIA_NOT_READY",
+          "RESOURCE_VERSION_CONFLICT"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getUploadPolicy": {
+      "path": "/api/v1/media/upload-policy",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "createUpload": {
+      "path": "/api/v1/media/uploads",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "EMAIL_VERIFICATION_REQUIRED",
+          "PERMISSION_DENIED"
+        ],
+        "409": [
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getMyUpload": {
+      "path": "/api/v1/media/uploads/{uploadId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "cancelMyUpload": {
+      "path": "/api/v1/media/uploads/{uploadId}",
+      "method": "delete",
+      "responses": {
+        "204": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "UPLOAD_STATE_CONFLICT"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "completeMyUpload": {
+      "path": "/api/v1/media/uploads/{uploadId}/completion",
+      "method": "post",
+      "responses": {
+        "202": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS",
+          "UPLOAD_STATE_CONFLICT"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getMyAsset": {
+      "path": "/api/v1/media/assets/{assetId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getMyTask": {
+      "path": "/api/v1/tasks/{taskId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "createTag": {
+      "path": "/api/v1/admin/tags",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "409": [
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS",
+          "TAG_NAME_CONFLICT"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getAdminTag": {
+      "path": "/api/v1/admin/tags/{tagId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "listAdminTags": {
+      "path": "/api/v1/admin/tags",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "updateTag": {
+      "path": "/api/v1/admin/tags/{tagId}",
+      "method": "patch",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "ACCOUNT_RESTRICTED",
+          "PERMISSION_DENIED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "RESOURCE_VERSION_CONFLICT",
+          "TAG_NAME_CONFLICT"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "listActiveTags": {
+      "path": "/api/v1/tags",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    }
+  }
+}

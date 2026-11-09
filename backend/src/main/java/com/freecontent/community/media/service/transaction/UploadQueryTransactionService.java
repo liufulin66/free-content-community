@@ -43,7 +43,7 @@ public class UploadQueryTransactionService {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
         if (account.getAccountStatus() == UserAccount.Status.DISABLED) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(account.getEmailVerified())) throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
+        if (!Boolean.TRUE.equals(account.getEmailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备上传查询权限");
         MediaUpload upload = uploads.findOwnedForShare(id, owner);
         if (upload == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         Instant now = clock.instant();

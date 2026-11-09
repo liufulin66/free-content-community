@@ -24,6 +24,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class BearerSessionFilter extends OncePerRequestFilter {
     public static final Set<String> PUBLIC_AUTH_PATHS = Set.of("/api/v1/auth/email-challenges",
             "/api/v1/auth/registrations", "/api/v1/auth/sessions", "/api/v1/auth/password-resets");
+    public static final Set<String> PUBLIC_READ_PATHS = Set.of("/api/v1/tags");
     private final SessionAuthenticationService authentication;
     private final HandlerExceptionResolver errors;
 
@@ -35,7 +36,8 @@ public class BearerSessionFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        return "POST".equals(request.getMethod()) && PUBLIC_AUTH_PATHS.contains(path);
+        return ("POST".equals(request.getMethod()) && PUBLIC_AUTH_PATHS.contains(path))
+                || ("GET".equals(request.getMethod()) && PUBLIC_READ_PATHS.contains(path));
     }
 
     @Override
@@ -62,7 +64,7 @@ public class BearerSessionFilter extends OncePerRequestFilter {
             }
         } catch (BusinessException ex) {
             SecurityContextHolder.clearContext();
-            errors.resolveException(request, response, null, ex);
+            errors.resolveException(request, response, null, contractAuthenticationFailure(request, ex));
             return;
         }
         try {
@@ -70,6 +72,15 @@ public class BearerSessionFilter extends OncePerRequestFilter {
         } finally {
             SecurityContextHolder.clearContext();
         }
+    }
+
+    private BusinessException contractAuthenticationFailure(HttpServletRequest request, BusinessException failure) {
+        if (failure.errorCode() != ErrorCode.EMAIL_VERIFICATION_REQUIRED) return failure;
+        // 当前已实现的受保护接口中，仅创建上传的契约声明邮箱未验证这一专用错误码。
+        // 仍拒绝其余请求，只将对外错误码收敛为契约允许的PERMISSION_DENIED。
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        if ("POST".equals(request.getMethod()) && "/api/v1/media/uploads".equals(path)) return failure;
+        return new BusinessException(ErrorCode.PERMISSION_DENIED, failure.getMessage());
     }
 
     // 业务写入请求包括除GET/HEAD/OPTIONS外的所有请求，除了PUT /api/v1/me/password和DELETE /api/v1/auth/sessions/current及DELETE /api/v1/me/sessions/{id}。

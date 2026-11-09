@@ -12,6 +12,7 @@ import com.freecontent.community.auth.service.LogoutService;
 import com.freecontent.community.auth.service.RegistrationService;
 import com.freecontent.community.auth.service.PasswordResetService;
 import com.freecontent.community.auth.security.SessionPrincipal;
+import com.freecontent.community.common.api.ApiErrorResponses;
 import com.freecontent.community.common.api.ApiResponse;
 import com.freecontent.community.common.api.RequestIdFilter;
 import com.freecontent.community.user.dto.CurrentUser;
@@ -32,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.ResponseStatus;
+
+import static com.freecontent.community.common.error.ErrorCode.*;
 
 /** 认证模块的HTTP入口；验证码、注册、登录流程分别由对应Service负责。 */
 @RestController
@@ -56,6 +59,8 @@ public class AuthController {
     @PostMapping(value = "/email-challenges", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(operationId = "createEmailChallenge", summary = "发送邮箱验证码")
+    @ApiErrorResponses(value = {MALFORMED_REQUEST, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE,
+            VALIDATION_ERROR, RATE_LIMITED, INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE}, includeCommon = false)
     public ResponseEntity<ApiResponse<ChallengeReceipt>> createEmailChallenge(
             @Valid @RequestBody CreateEmailChallengeRequest request, HttpServletRequest servletRequest) {
         // 使用连接来源，默认不信任客户端可伪造的X-Forwarded-For。
@@ -67,6 +72,9 @@ public class AuthController {
     @PostMapping(value = "/registrations", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(operationId = "registerAccount", summary = "邮箱验证码注册")
+    @ApiErrorResponses(value = {MALFORMED_REQUEST, CHALLENGE_INVALID, REGISTRATION_NOT_ALLOWED,
+            PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE, VALIDATION_ERROR, RATE_LIMITED,
+            INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE}, includeCommon = false)
     public ResponseEntity<ApiResponse<CurrentUser>> register(
             @Valid @RequestBody RegisterRequest request, HttpServletRequest servletRequest) {
         CurrentUser user = registrationService.register(request, servletRequest.getRemoteAddr());
@@ -77,6 +85,9 @@ public class AuthController {
     @PostMapping(value = "/sessions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(operationId = "createSession", summary = "密码登录并创建会话")
+    @ApiErrorResponses(value = {MALFORMED_REQUEST, AUTHENTICATION_FAILED, ACCOUNT_RESTRICTED,
+            EMAIL_VERIFICATION_REQUIRED, PAYLOAD_TOO_LARGE, UNSUPPORTED_MEDIA_TYPE,
+            VALIDATION_ERROR, RATE_LIMITED, INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE}, includeCommon = false)
     public ResponseEntity<ApiResponse<LoginResult>> login(
             @Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
         LoginResult result = loginService.login(request, servletRequest.getRemoteAddr());
@@ -88,6 +99,7 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(operationId = "deleteCurrentSession", summary = "退出当前会话",
             security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiErrorResponses
     public ResponseEntity<Void> logout(@Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal currentSession) {
         logoutService.logoutCurrentSession(currentSession);
         return ResponseEntity.noContent().build();
@@ -96,6 +108,9 @@ public class AuthController {
     @PostMapping(value = "/password-resets", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(operationId = "resetPassword", summary = "验证码重置密码")
+    @ApiErrorResponses(value = {MALFORMED_REQUEST, CHALLENGE_INVALID, PAYLOAD_TOO_LARGE,
+            UNSUPPORTED_MEDIA_TYPE, VALIDATION_ERROR, RATE_LIMITED, INTERNAL_ERROR,
+            DEPENDENCY_UNAVAILABLE}, includeCommon = false)
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request,
                                              HttpServletRequest servletRequest) {
         passwordResetService.reset(request, servletRequest.getRemoteAddr());

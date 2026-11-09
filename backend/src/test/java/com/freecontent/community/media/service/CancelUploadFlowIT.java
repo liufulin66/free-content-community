@@ -228,6 +228,34 @@ class CancelUploadFlowIT {
         assertEquals("UPLOADING", jdbc.queryForObject("SELECT state FROM media_upload_session WHERE id=?", String.class, id));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"BEFORE_AUTHENTICATION", "AFTER_AUTHENTICATION"})
+    void unverifiedEmailCannotCancelUploadAndUsesTheContractCode(String timing) throws Exception {
+        UserAccount user = fixture();
+        String token = token(user);
+        String id = JsonPath.read(create(token, UUID.randomUUID().toString()).body(), "$.data.id");
+        Map<String, Object> before = jdbc.queryForMap("SELECT * FROM media_upload_session WHERE id=?", id);
+        Map<String, Object> assetBefore = jdbc.queryForMap("SELECT * FROM media_asset WHERE id=?", before.get("asset_id"));
+        if ("BEFORE_AUTHENTICATION".equals(timing)) {
+            jdbc.update("UPDATE app_user SET email_verified=0 WHERE id=?", user.getId());
+        } else {
+            doAnswer(invocation -> {
+                SessionPrincipal principal = (SessionPrincipal) invocation.callRealMethod();
+                jdbc.update("UPDATE app_user SET email_verified=0 WHERE id=?", user.getId());
+                return principal;
+            }).when(authentication).authenticate(token);
+        }
+
+        HttpResponse<String> response = cancel(id, "1", token);
+
+        assertEquals(403, response.statusCode());
+        assertEquals("PERMISSION_DENIED", JsonPath.read(response.body(), "$.code"));
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals(before, jdbc.queryForMap("SELECT * FROM media_upload_session WHERE id=?", id));
+        assertEquals(assetBefore, jdbc.queryForMap("SELECT * FROM media_asset WHERE id=?", before.get("asset_id")));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM media_upload_cleanup WHERE upload_id=?", Integer.class, id));
+    }
+
     @Test void simultaneousCancellationsChangeTheVersionOnlyOnce() throws Exception {
         UserAccount user = fixture(); String token = token(user);
         String id = JsonPath.read(create(token, UUID.randomUUID().toString()).body(), "$.data.id");

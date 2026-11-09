@@ -16,4 +16,7 @@ public interface UserRoleMapper {
 
     @Select("SELECT role_code FROM app_user_role WHERE user_id = #{userId} ORDER BY role_code")
     List<UserRole> findRoles(@Param("userId") String userId);
+
+    @Select("SELECT role_code FROM app_user_role WHERE user_id=#{userId} ORDER BY role_code FOR SHARE")
+    List<UserRole> findRolesForShare(@Param("userId") String userId);
 }

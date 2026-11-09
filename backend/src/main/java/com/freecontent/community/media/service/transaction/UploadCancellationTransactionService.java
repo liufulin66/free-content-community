@@ -38,7 +38,7 @@ public class UploadCancellationTransactionService {
         UserAccount account = users.findByIdForUpdate(owner);
         if (account == null || account.getAuthVersion() == null || account.getAuthVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         if (account.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(account.getEmailVerified())) throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
+        if (!Boolean.TRUE.equals(account.getEmailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备取消上传权限");
         MediaUpload upload = uploads.findOwnedForUpdate(id, owner);
         if (upload == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         if ("CANCELLED".equals(upload.getState())) return;

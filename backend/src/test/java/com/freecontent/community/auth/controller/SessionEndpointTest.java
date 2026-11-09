@@ -13,10 +13,12 @@ import com.freecontent.community.user.model.UserRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -166,6 +168,36 @@ class SessionEndpointTest {
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.code").value("DEPENDENCY_UNAVAILABLE"));
         mvc.perform(get("/api/v1/test/private").header("Authorization", "Bearer " + TOKEN))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "GET, /api/v1/me, PERMISSION_DENIED",
+            "PATCH, /api/v1/me, PERMISSION_DENIED",
+            "PUT, /api/v1/me/password, PERMISSION_DENIED",
+            "DELETE, /api/v1/auth/sessions/current, PERMISSION_DENIED",
+            "POST, /api/v1/admin/tags, PERMISSION_DENIED",
+            "GET, /api/v1/media/upload-policy, PERMISSION_DENIED",
+            "GET, /api/v1/media/uploads/upload_1, PERMISSION_DENIED",
+            "DELETE, /api/v1/media/uploads/upload_1, PERMISSION_DENIED",
+            "POST, /api/v1/media/uploads/upload_1/completion, PERMISSION_DENIED",
+            "GET, /api/v1/media/assets/asset_1, PERMISSION_DENIED",
+            "GET, /api/v1/tasks/task_1, PERMISSION_DENIED",
+            "POST, /api/v1/media/uploads, EMAIL_VERIFICATION_REQUIRED"
+    })
+    void unverifiedAccountIsRejectedWithTheOperationsContractCode(String method, String path, String code) throws Exception {
+        when(authentication.authenticate(TOKEN))
+                .thenThrow(new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED, "请先完成邮箱验证"));
+
+        mvc.perform(request(HttpMethod.valueOf(method), path).header("Authorization", "Bearer " + TOKEN))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentType("application/problem+json"))
+                .andExpect(jsonPath("$.code").value(code))
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        verifyNoInteractions(service, logoutService, passwordResetService, emailChallengeService, registrationService);
     }
 
     @Test

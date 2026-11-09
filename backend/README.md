@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签、取消与后台文件回收、完成确认、媒体处理任务及本人素材校验结果查询，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签、取消与后台文件回收、完成确认、媒体处理任务及本人素材校验结果查询，以及公开有效标签查询、管理员创建标签、详情与列表查询、修改及启停标签，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -759,3 +759,214 @@ V8复用V5已有actual_content_type和actual_size_bytes，新增可空duration_s
 
 2026-11-07验证：本业务新增34项检查；`mvn clean verify`通过440项测试
 （223项单元/Web、217项集成），0失败、0错误、0跳过，打包成功；V8迁移已执行。
+
+## 查询有效标签（公开）
+
+```http
+GET /api/v1/tags
+```
+
+游客可访问，不要求Bearer、请求体、查询参数或幂等键。成功返回200，data仅含items，元素复用Tag的id、name、description、status、version五个字段。
+只读取ACTIVE标签，固定按名称、ID升序；不分页、不截断到20或100条，空结果返回items:[]。
+复用TagQueryService和TagQueryTransactionService，公开分支只读标签表，不读取调用者账号或角色，不改变标签版本和时间。
+
+GET /api/v1/tags在SecurityConfiguration和BearerSessionFilter中通过同一公开读取路径集合放行并跳过认证。
+客户端附带过期、错误或受限账号的凭证不会导致401/403，也不触发会话认证；其他方法、后台标签和账号接口的认证权限保持原规则。
+公开Controller显式关闭已认证接口的默认错误集合，Swagger仅声明本接口的400、422、429、500、503，响应保持X-Request-Id及Cache-Control:no-store。
+
+独立配置app.tag.active-query，默认同来源120次/分钟，可通过TAG_ACTIVE_QUERY_IP_PER_MINUTE_LIMIT、TAG_ACTIVE_QUERY_REDIS_KEY_PREFIX覆盖。
+使用独立tag-active-query来源计数，不使用用户配额，也不占用后台标签创建、查询或修改额度。
+进入业务入口的每次调用都计数，包括重复读取、空列表和未知查询参数请求；超限优先429并提供Retry-After。
+不接受page、status等未声明查询参数，返回400且不查询标签表；Redis无法确认限流结果或MySQL不可用返回503，不泄露内部细节。
+
+每次查询读取当前已提交状态，不增加服务端标签缓存；后台停用提交后下一次查询不再包含该标签，重新启用后恢复显示。
+列表用于展示和选择，后续内容/审核模块仍须在提交时重新校验标签状态。
+新增Controller、响应DTO、配置和限流均归tag模块，复用现有表与查询组件，无新增依赖或迁移。
+真实HTTP/MySQL/Redis检查公开访问、权限边界、全量排序、启停联动、只读性及并发限流；契约快照包含listActiveTags。
+完整验证日志为`.local-dev/active-tags-full-check.log`。
+
+2026-11-08验证：新增31项公开标签专项检查，契约快照新增listActiveTags，覆盖全部20个现有接口。
+按TDD执行红、绿、重构后，`mvn clean verify`通过705项测试（298项单元/Web、407项集成），0失败、0错误、0跳过，打包成功。
+
+## 管理员创建标签
+
+`POST /api/v1/admin/tags`需要Bearer及16～128字符的Idempotency-Key，仅ADMIN对应的`tag:manage`权限可操作。
+后台权限统一由`auth/security/AdminAuthorizationManager`按方法与路径判定；未登记的后台路径默认拒绝，业务事务仍复核ADMIN角色。
+账号须已验证邮箱且为ACTIVE；HTTP安全链检查ADMIN，事务中再次锁定账号并共享锁读取当前角色，
+防止认证后权限撤销仍写入。没有新增公开的管理员初始化或提权接口。
+
+```json
+{"name":"Java","description":"Java技术","status":"ACTIVE"}
+```
+
+只有name必填，去除首尾Unicode空白后长度为1～30个Unicode字符；保留内部空白和显示大小写。
+description默认空字符串，最多200个字符且不trim；status默认ACTIVE，可显式指定DISABLED。
+可选字段省略使用默认值，显式null返回422；类型错误、未知字段或无效枚举返回400，字段长度不符返回422。
+
+成功201，data包含id/name/description/status/version，初始version=1；Location为`/api/v1/admin/tags/{tagId}`。
+V9新增`community_tag`与`tag_creation_request`，V1～V8保持不变。
+名称唯一索引采用`utf8mb4_0900_as_ci`：忽略大小写、保留重音区别，禁用标签仍占用名称。
+并发同名创建由数据库唯一约束裁决，失败方409 TAG_NAME_CONFLICT；不依赖“先查再插入”保证唯一性。
+
+### 幂等与事务
+
+作用域为调用者＋createTag＋key，保留24小时；只保存键摘要及规范化请求指纹，不保存原始幂等键。
+指纹包括trim后的显示名称、原样description和解析默认值后的status；不同JSON字段顺序或省略默认值不影响重放。
+同键同请求返回第一次的Tag快照、201及Location；标签后来修改也不会把旧创建结果重放成新版本。
+同键不同请求409 IDEMPOTENCY_KEY_REUSED；处理中409 REQUEST_IN_PROGRESS，并提供Retry-After。
+所有重放仍校验当前账号与管理员角色；过期键可用于新请求，但仍受名称唯一约束。
+
+claim短事务采用READ_COMMITTED，锁顺序为账号→角色→幂等记录，预留60秒租约；同一调用者由账号行锁串行化。
+此处避免默认隔离级别下两个调用者查询缺失幂等键后插入产生的间隙锁死锁；没有修改全局事务隔离级别。
+Redis配额检查在SQL事务外执行，finish再次复核权限及租约令牌，标签与成功响应快照在同一事务提交。
+快照写入失败则标签一起回滚；失败预留只由自己持有的令牌释放，租约到期可恢复，旧持有者不能覆盖新结果。
+
+### 限流与范围
+
+`app.tag.creation`默认来源60次/分钟、管理员100次/小时，使用独立`{tag-create}`计数作用域。
+沿用上传创建规则：进入新创建处理时计数，成功幂等重放免配额；新请求失败不退还已消费额度。
+Redis无法确认结果或数据库不可用返回503；429提供正整数Retry-After，额度不与上传创建共享。
+环境变量见infra/.env.example中的TAG_CREATION配置。
+
+创建接口返回的Location可通过下述管理员详情GET读取；管理员分页列表和下述修改/停用PATCH也已实现。
+专项验证涵盖管理员权限、认证后撤权、Unicode边界、大小写与重音、禁用名称冲突、幂等快照、过期及租约恢复、
+真实MySQL并发与回滚、真实Redis小时/分钟窗口，以及生成的OpenAPI。全量日志为`.local-dev/tag-create-full-check.log`。
+
+2026-11-08验证：本业务新增48项专项检查；`mvn clean verify`通过488项测试
+（248项单元/Web、240项集成），0失败、0错误、0跳过，打包成功；V9迁移已执行。
+
+## 管理员读取指定标签
+
+```http
+GET /api/v1/admin/tags/{tagId}
+Authorization: Bearer <管理员凭证>
+```
+
+需要ADMIN对应的`tag:manage`权限。无需请求体、Idempotency-Key或expectedVersion。
+tagId为1～64位英文字母、数字、下划线或短横线；格式错误返回422及path/tagId字段提示，合法但不存在或大小写不匹配返回404。
+
+成功返回200及`ApiResponse<Tag>`，data仅包含id、name、description、status、version。
+读取数据库当前值，不使用创建幂等快照；可读取其他管理员创建的ACTIVE或DISABLED标签，不修改标签内容、状态、version和时间字段。
+WRITE_BLOCKED管理员仍可读取；USER、MODERATOR、邮箱未验证或已撤销ADMIN角色的账号不能读取。
+事务按账号、角色顺序取共享锁，复核authVersion、账号状态、邮箱与当前角色，再按主键读取标签。
+
+`app.tag.query`默认来源120次/分钟、管理员60次/分钟，可用`TAG_QUERY_IP_PER_MINUTE_LIMIT`、`TAG_QUERY_USER_PER_MINUTE_LIMIT`及`TAG_QUERY_REDIS_KEY_PREFIX`覆盖。
+计数作用域为独立`{tag-query}`，列表与详情共享配额，重复读取、空页和404计数，格式不合法的ID或分页参数在计数前拒绝；不占用标签创建或媒体接口配额。
+429返回正整数Retry-After；MySQL、Redis不可用或限流结果无法确认时返回503，不泄露内部连接与查询信息。
+
+Controller、Service接口与实现、事务、配置及限流均位于tag模块，复用TagView、TagMapper和V9已有表，不新增迁移或依赖。
+真实HTTP/MySQL/Redis测试验证创建后通过Location读取、权限与认证后撤权、停用标签、只读性、独立限流及故障分支；OpenAPI契约快照已包含getAdminTag。
+完整验证日志为`.local-dev/tag-query-full-check.log`。
+
+2026-11-08验证：新增36项标签查询专项检查，固定契约快照新增getAdminTag，覆盖全部17个现有接口。
+按TDD执行红、绿、重构后，`mvn clean verify`通过570项测试（277项单元/Web、293项集成），0失败、0错误、0跳过，打包成功。
+
+## 管理员查询全部标签
+
+```http
+GET /api/v1/admin/tags?page=1&pageSize=20
+Authorization: Bearer <管理员凭证>
+```
+
+需要ADMIN对应的`tag:manage`权限，包含所有管理员创建的ACTIVE和DISABLED标签。
+复用详情查询的Controller、Service、事务、权限复核和限流器；新增响应DTO为TagPageView，不新增表、迁移、配置分组或依赖。
+WRITE_BLOCKED管理员可读取；普通用户、审核员、邮箱未验证、禁用或已撤销ADMIN角色的账号被拒绝。
+
+page默认1且必须为正整数；pageSize默认20，范围1～100。非整数或空字符串返回400，数值越界返回422，并提供query字段提示。
+仅接受page、pageSize两个查询参数，各最多出现一次；未知或重复参数返回400，不接受客户端任意排序和筛选。
+返回200及data中的items、page、pageSize、total；items的每条记录沿用Tag五个字段，不暴露创建者和内部时间字段。
+
+固定按(created_at,id)倒序，ID打破时间并列。超出最后一页返回空items和真实total，不返回404；不静默跳回第一页。
+页码不额外设定契约外上限，使用BigInteger计算偏移，越界空页不执行分页SQL，避免整数溢出。
+先在短事务内复核账号与当前角色，再使用同一REPEATABLE_READ快照读取总数和当前页，避免并发创建使单次响应的total和items不一致。
+读取不修改标签内容、状态、version或时间字段。
+
+列表与详情共享app.tag.query的来源120次/分钟、管理员60次/分钟额度，可通过原TAG_QUERY环境变量覆盖。
+重复查询、空页与详情404均计数，429提供Retry-After；参数非法请求不计查询配额，MySQL或Redis故障返回503。
+真实HTTP/MySQL/Redis验证排序与边界、共享配额、认证后撤权、只读性、故障及并发快照；Swagger与固定契约快照覆盖listAdminTags。
+完整验证日志为`.local-dev/tag-list-full-check.log`。
+
+2026-11-08验证：新增35项列表专项检查，契约快照新增listAdminTags，覆盖全部18个现有接口。
+按TDD执行红、绿、重构后，`mvn clean verify`通过606项测试（277项单元/Web、329项集成），0失败、0错误、0跳过，打包成功。
+
+## 管理员修改或停用标签
+
+```http
+PATCH /api/v1/admin/tags/{tagId}
+Authorization: Bearer <管理员凭证>
+Content-Type: application/json
+
+{"expectedVersion":1,"status":"DISABLED"}
+```
+
+需要ADMIN对应的tag:manage权限，账号必须ACTIVE且邮箱已验证；事务内重新检查authVersion和当前角色。
+不要求Idempotency-Key；成功返回200及当前Tag五个字段。停用只更新status，不删除记录，其他管理员也能修改平台标签。
+可提交name、description、status中的任意一个或多个字段；必须携带正整数expectedVersion，且至少提供一个待修改字段。
+未提交字段保持原值，显式null返回422；名称沿用创建规则去除Unicode首尾空白、1～30字符，说明最多200字符且不trim，空字符串可清空说明。
+状态为ACTIVE或DISABLED，可重新启用；未知字段、JSON类型错误或枚举非法返回400。
+
+锁顺序为账号共享锁、当前角色共享锁、目标标签FOR UPDATE行锁；更新SQL仍携带id与expectedVersion条件。
+版本不匹配返回409 RESOURCE_VERSION_CONFLICT及授权后读取的currentVersion，所有字段不变。
+先核对版本，再判断同值请求；版本匹配但无实际变化返回200，version与updated_at不变。真实修改一次只递增一版，版本达到整数上限时拒绝继续递增。
+名称继续忽略大小写、区分重音判重，启用和停用标签均占用名称；修改自身显示大小写属于实际变化。重名返回409 TAG_NAME_CONFLICT，整次修改回滚。
+两个管理员并发修改同一版本，只有一方成功；不同标签并发抢占同名由数据库唯一约束裁决。数据库失败返回503，已执行的SQL更新仍整体回滚。
+
+独立配置app.tag.update：默认来源60次/分钟、管理员100次/小时，环境变量为TAG_UPDATE_IP_PER_MINUTE_LIMIT、TAG_UPDATE_USER_HOURLY_LIMIT、TAG_UPDATE_REDIS_KEY_PREFIX。
+使用独立tag-update计数域，不占用创建或查询配额；同值、版本冲突、合法但不存在的标签请求均计数，参数非法请求在计数前拒绝。429提供Retry-After，Redis无法确认结果时返回503。
+修改不改变原创建幂等快照，原创建键成功重放仍免创建配额；读取当前信息应使用详情或列表GET。
+
+实现、配置、限流、DTO与测试全部归tag模块，复用V9表、TagView、现有认证与Lua，不新增依赖或迁移。
+本接口持久化启停状态；内容/审核模块尚未实现，后续新审核引用限制和历史标签展示需由其按契约接入，不在此处伪造内容处理结果。
+真实HTTP/MySQL/Redis验证事务回滚、并发版本与重名竞争、PATCH语义及独立限流；Swagger及契约快照覆盖updateTag。
+完整验证日志为`.local-dev/tag-update-full-check.log`。
+
+2026-11-08验证：新增66项修改/停用专项检查，契约快照新增updateTag，覆盖全部19个现有接口。
+按TDD执行红、绿、重构后，`mvn clean verify`通过673项测试（288项单元/Web、385项集成），0失败、0错误、0跳过，打包成功。
+
+## Controller公共错误响应文档
+
+运行时仍由`GlobalExceptionHandler`统一生成`application/problem+json`；Controller中的错误声明用于OpenAPI文档。
+公共错误模型复用`ProblemDetailResponse`，错误码、HTTP状态和标题复用`ErrorCode`，不在每个Controller重复拼接。
+
+`common/api/ApiErrorResponses.java`是简短文档注解，公共生成逻辑集中在`config/ProblemResponseCustomizer.java`；`OpenApiConfig.java`负责API基本信息、安全方案及公共模型注册。
+默认包含已认证业务接口的400、401、403、422、429、500、503及对应通用业务错误码；
+其中403公共集合为PERMISSION_DENIED和ACCOUNT_RESTRICTED。EMAIL_VERIFICATION_REQUIRED按接口契约显式声明，当前已实现接口中仅密码登录、创建上传使用这一专用错误码。
+Controller只补充本接口特有错误，例如本人查询：
+
+```java
+@ApiErrorResponses(RESOURCE_NOT_FOUND)
+```
+
+创建标签则补充TAG_NAME_CONFLICT、IDEMPOTENCY_KEY_REUSED、REQUEST_IN_PROGRESS、PAYLOAD_TOO_LARGE及UNSUPPORTED_MEDIA_TYPE。
+生成器按实际声明的错误码分组，约束每个响应的status和code，补齐公共响应头及401/429/处理中409的专有响应头。
+创建接口不会被统一加入404，普通查询不会被统一加入409或上传相关错误。
+公开接口等特殊场景可使用`includeCommon=false`，显式声明完整错误集合。
+
+成功状态、响应DTO及Location/受理轮询头仍在所属Controller声明；公共X-Request-Id及Cache-Control由配置统一描述。
+当前迁移覆盖认证、账号、媒体上传/完成/查询及标签创建的全部现有Controller；未声明`@ApiErrorResponses`的接口不会自动追加错误集合。
+文档注解不参与权限判定或异常处理，业务流程、认证和事务仍按原模块执行。
+CommonErrorDocumentationIT验证错误码隔离、响应头、成功schema及显式关闭默认集合。
+测试资源`src/test/resources/contracts/api-v1-error-responses.json`保存从固定版本外部OpenAPI提取的已实现接口响应状态和错误码，记录来源与SHA-256，不依赖个人磁盘绝对路径。
+测试按operationId逐项比较完整错误集合，并要求快照覆盖全部已生成接口；新增接口或正式调整契约时同步更新快照，不能通过修改公共默认集合绕过校验。
+SessionAuthenticationService仍拒绝邮箱未验证的账号。BearerSessionFilter在认证失败边界将创建上传以外请求的该错误映射为403 PERMISSION_DENIED，密码登录仍由公开登录流程处理；该映射不读取Swagger注解。
+上传查询、取消事务中的邮箱复核同样返回PERMISSION_DENIED；认证前后状态变化均不能取得上传地址或修改上传状态。
+全量验证日志为`.local-dev/controller-responses-full-check.log`。
+
+2026-11-08验证：新增6项集中错误文档契约检查；`mvn clean verify`通过494项测试
+（248项单元/Web、246项集成），0失败、0错误、0跳过。本次不涉及数据库迁移。
+
+2026-11-08验证：完成认证、账号、媒体创建/查询/取消Controller迁移；`mvn verify`通过506项测试
+（248项单元/Web、258项集成），0失败、0错误、0跳过。CommonErrorDocumentationIT扩展为18项检查。
+
+2026-11-08验证：将EMAIL_VERIFICATION_REQUIRED纳入已认证接口公共403文档；`mvn verify`通过507项测试
+（248项单元/Web、259项集成），0失败、0错误、0跳过。CommonErrorDocumentationIT扩展为19项检查，
+新增全局403错误码一致性校验。
+
+2026-11-08验证：新增Controller注解守卫、公开接口语义校验和后台统一授权入口；`mvn verify`通过517项测试
+（254项单元/Web、263项集成），0失败、0错误、0跳过。CommonErrorDocumentationIT扩展为23项检查；
+AdminAuthorizationManager未新增数据库迁移。
+
+2026-11-08契约对齐验证：已按接口收敛邮箱未验证错误码，替代此前将EMAIL_VERIFICATION_REQUIRED加入公共403集合的做法。
+按TDD验证认证错误映射、16个现有接口的完整错误契约，以及上传查询/取消在认证前后邮箱状态变化时的拒绝行为。
+`mvn clean verify`通过533项测试（266项单元/Web、267项集成），0失败、0错误、0跳过，打包成功。
+本次无新增生产类、依赖或迁移，原始OpenAPI契约未修改；完整日志为`.local-dev/contract-errors-full-check.log`。

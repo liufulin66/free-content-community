@@ -285,6 +285,34 @@ class GetMyUploadFlowIT {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"BEFORE_AUTHENTICATION", "AFTER_AUTHENTICATION"})
+    void unverifiedEmailCannotRenewUploadAndUsesTheContractCode(String timing) throws Exception {
+        UserAccount user = fixture();
+        String token = token(user);
+        String id = JsonPath.read(create(token, UUID.randomUUID().toString()).body(), "$.data.id");
+        Map<String, Object> before = snapshot(id);
+        clearInvocations(signer);
+        if ("BEFORE_AUTHENTICATION".equals(timing)) {
+            jdbc.update("UPDATE app_user SET email_verified=0 WHERE id=?", user.getId());
+        } else {
+            doAnswer(invocation -> {
+                SessionPrincipal principal = (SessionPrincipal) invocation.callRealMethod();
+                jdbc.update("UPDATE app_user SET email_verified=0 WHERE id=?", user.getId());
+                return principal;
+            }).when(authentication).authenticate(token);
+        }
+
+        HttpResponse<String> response = get(id, token);
+
+        assertEquals(403, response.statusCode());
+        assertEquals("PERMISSION_DENIED", JsonPath.read(response.body(), "$.code"));
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals(before, snapshot(id));
+        assertFalse(response.body().contains("singleUploadTarget"));
+        verifyNoInteractions(signer);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"WRITE_BLOCKED", "DISABLED"})
     void restrictionChangedAfterAuthenticationIsRecheckedBeforeSigning(String status) throws Exception {
         UserAccount user = fixture();

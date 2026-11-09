@@ -1,5 +1,6 @@
 package com.freecontent.community.auth.config;
 
+import com.freecontent.community.auth.security.AdminAuthorizationManager;
 import com.freecontent.community.auth.security.BearerSessionFilter;
 import com.freecontent.community.auth.service.SessionAuthenticationService;
 import com.freecontent.community.common.error.BusinessException;
@@ -22,7 +23,13 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 @EnableWebSecurity
 public class SecurityConfiguration {
     @Bean
+    public AdminAuthorizationManager adminAuthorizationManager() {
+        return new AdminAuthorizationManager();
+    }
+
+    @Bean
     public SecurityFilterChain apiSecurity(HttpSecurity http, SessionAuthenticationService authentication,
+            AdminAuthorizationManager adminAuthorization,
             @Qualifier("handlerExceptionResolver") HandlerExceptionResolver errors) throws Exception {
         http.cors(Customizer.withDefaults())
                 // 仅接受显式Authorization Bearer，不接受Cookie或HttpSession身份。
@@ -40,7 +47,9 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, BearerSessionFilter.PUBLIC_AUTH_PATHS.toArray(String[]::new)).permitAll()
+                        .requestMatchers(HttpMethod.GET, BearerSessionFilter.PUBLIC_READ_PATHS.toArray(String[]::new)).permitAll()
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/v1/admin/**").access(adminAuthorization)
                         .anyRequest().authenticated())
                 .addFilterBefore(new BearerSessionFilter(authentication, errors), UsernamePasswordAuthenticationFilter.class);
         return http.build();
