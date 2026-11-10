@@ -23,4 +23,7 @@ public class MediaAsset {
     private Integer width;
     private Integer height;
     private LocalDateTime createdAt;
+    private String readyObjectKey;
+    private String readyObjectEtag;
+    private String readyStorageId;
 }

@@ -23,9 +23,16 @@
         <springdoc.version>3.1.1</springdoc.version>
         <minio.version>9.0.4</minio.version>
         <bouncycastle.version>1.86</bouncycastle.version>
+        <commonmark.version>0.32.0</commonmark.version>
     </properties>
 
     <dependencies>
+        <!-- Markdown语法树仅用于核对正文图片引用，不渲染或执行HTML。 -->
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>${commonmark.version}</version>
+        </dependency>
         <!-- Spring Boot 4 的 MVC starter；spring-boot-starter-web 已标记 deprecated -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

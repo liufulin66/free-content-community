@@ -18,6 +18,7 @@ import org.slf4j.MDC;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import java.util.Set;
 
 import static com.freecontent.community.common.error.ErrorCode.*;
 
@@ -38,6 +39,7 @@ public class TagUpdateController {
             @Parameter(schema = @Schema(minLength = 1, maxLength = 64, pattern = "^[A-Za-z0-9_-]+$")) @PathVariable String tagId,
             @Valid @RequestBody TagUpdateRequest patch,
             @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal principal, HttpServletRequest request) {
+        TagQueryParameters.validate(request, Set.of());
         return ApiResponse.of(service.update(tagId, patch, principal, request.getRemoteAddr()), MDC.get(RequestIdFilter.MDC_KEY));
     }
 }

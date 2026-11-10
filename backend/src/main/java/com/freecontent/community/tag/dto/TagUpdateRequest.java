@@ -8,14 +8,17 @@ import com.freecontent.community.tag.model.TagStatus;
 import com.freecontent.community.tag.support.TagNames;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Positive;
 import tools.jackson.databind.JsonNode;
+import java.math.BigInteger;
 
 @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.NONE)
 @Schema(description = "至少提供一个待修改字段；未提供保持原值，字段不接受null", requiredProperties = "expectedVersion",
         minProperties = 2, additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 public class TagUpdateRequest {
-    @NotNull @Positive private Integer expectedVersion;
+    // 先校验范围，校验通过后业务层仍使用Integer版本。
+    @NotNull @Positive @Max(Integer.MAX_VALUE) private BigInteger expectedVersion;
     @CodePointLength(min = 1, max = 30) private String name;
     @CodePointLength(max = 200) private String description;
     private TagStatus status;
@@ -24,7 +27,7 @@ public class TagUpdateRequest {
     private boolean statusProvided;
 
     @Schema(implementation = Integer.class, type = "integer", format = "int32", minimum = "1", maximum = "2147483647")
-    public Integer getExpectedVersion() { return expectedVersion; }
+    public Integer getExpectedVersion() { return expectedVersion == null ? null : expectedVersion.intValueExact(); }
     @Schema(minLength = 1, maxLength = 30, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     public String getName() { return name; }
     @Schema(maxLength = 200, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -36,8 +39,8 @@ public class TagUpdateRequest {
     public void setExpectedVersion(JsonNode value) {
         if (value == null || value.isNull()) expectedVersion = null;
         else {
-            if (!value.isIntegralNumber() || !value.canConvertToInt()) throw new IllegalArgumentException("版本必须为32位整数");
-            expectedVersion = value.intValue();
+            if (!value.isIntegralNumber()) throw new IllegalArgumentException("版本必须为整数");
+            expectedVersion = value.bigIntegerValue();
         }
     }
 

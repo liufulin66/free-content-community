@@ -669,6 +669,188 @@
           "DEPENDENCY_UNAVAILABLE"
         ]
       }
+    },
+    "createContent": {
+      "path": "/api/v1/creator/contents",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED",
+          "EMAIL_VERIFICATION_REQUIRED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getMyContentWorkspace": {
+      "path": "/api/v1/creator/contents/{contentId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "editContentDraft": {
+      "path": "/api/v1/creator/contents/{contentId}/draft",
+      "method": "patch",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "CONTENT_VERSION_CONFLICT",
+          "DRAFT_NOT_EDITABLE",
+          "CONTENT_NOT_EDITABLE"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "listMyContents": {
+      "path": "/api/v1/creator/contents",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getDraftMediaAccess": {
+      "path": "/api/v1/creator/contents/{contentId}/revisions/{revisionId}/media/{assetId}/access",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "MEDIA_NOT_READY"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
     }
   }
 }

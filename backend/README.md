@@ -1,6 +1,6 @@
 # 免费技术内容社区 · 后端
 
-Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签、取消与后台文件回收、完成确认、媒体处理任务及本人素材校验结果查询，以及公开有效标签查询、管理员创建标签、详情与列表查询、修改及启停标签，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
+Spring Boot 4.1.2 + JDK 17 后端，已实现验证码申请、邮箱注册、密码登录、退出、验证码重置、当前账号改密、资料查询与编辑、Redis会话认证、上传策略查询、私有上传会话创建、查询续签、取消与后台文件回收、完成确认、媒体处理任务及本人素材校验结果查询，以及公开有效标签查询、管理员创建标签、详情与列表查询、修改及启停标签、创建内容及首个草稿、读取本人内容工作区、保存当前可编辑草稿、本人创作及回收站分页查询、本人修订媒体预览，对应本地 API 契约（`project-docs` 目录，不随仓库分发）。
 
 ## 技术栈
 
@@ -95,6 +95,9 @@ backend/
     │   │   │   │   └── transaction/     # 用户业务事务
     │   │   │   ├── ratelimit/           # 用户业务限流
     │   │   │   └── config/              # 用户业务配置
+    │   │   ├── media/                   # 上传、媒体任务和素材查询
+    │   │   ├── tag/                     # 标签管理和公开有效标签
+    │   │   ├── content/                 # 内容与首稿创建；模块内包含controller/dto/service/transaction/mapper等
     │   │   ├── common/
     │   │   │   ├── api/        # ApiResponse、RequestIdFilter
     │   │   │   ├── error/      # RFC 9457 Problem Details
@@ -422,6 +425,7 @@ WRITE_BLOCKED允许查询，返回canCreate=false；DISABLED返回403 ACCOUNT_RE
 
 DTO通过JSON Setter保留字段存在标记，拒绝客户端篡改内部标记，不将数字、数组或对象静默转换为资料字符串。
 昵称和简介使用Unicode码点计数，不静默截断或trim。只提交expectedVersion或不符合字段校验的输入返回422。
+expectedVersion必须为1～2147483647的JSON整数；整数值越界返回422及body/expectedVersion提示，字符串、小数等类型错误仍返回400。
 
 UserProfileService与事务、DTO、配置、限流和校验都位于user模块。
 事务锁定目标账号并再次检查认证版本、ACTIVE状态及资料版本，然后通过MyBatis if/set生成动态更新，
@@ -593,7 +597,7 @@ UploadCancellationService及其实现归media模块。事务按账号→会话�
 将素材设为已有枚举FAILED，并在同一事务插入唯一清理任务。任务入队失败时所有更新回滚，API返回503。
 已经CANCELLED的本人会话重复取消返回204，包括携带第一次的旧正整数版本，不增加版本或重复创建任务。
 COMPLETED、EXPIRED、超时UPLOADING、版本冲突及已READY/PROCESSING素材均返回409 UPLOAD_STATE_CONFLICT。
-非法ID或非正版本返回422，缺少、无法解析或超出int32范围的版本返回400；非本人或不存在统一404。
+非法ID或整数版本超出1～2147483647返回422及对应字段提示；版本缺少或无法解析为整数返回400；非本人或不存在统一404。
 WRITE_BLOCKED及DISABLED禁止取消；取消不改变账号资料版本、认证版本或其他会话。
 
 创建接口的幂等重放也复核原上传状态与期限，取消、完成或过期后不再返回原上传凭证，避免借旧创建键继续操作。
@@ -653,7 +657,7 @@ UploadCleanupWorker每轮最多认领一个任务，原子更新为RUNNING；存
 ```
 
 SINGLE必须省略parts，显式null或提交分片清单均返回422；视频和分片完成尚未实现。
-版本必须是1～2147483647的JSON整数；错误类型或未知字段返回400，缺失/非正版本返回422。
+版本必须是1～2147483647的JSON整数；错误类型或未知字段返回400，缺失、null或整数值越界返回422及body/expectedVersion提示。
 路径ID和幂等键分别按契约限制校验；幂等键长度为16～128字符。
 
 ### 存储检查与原子提交
@@ -843,6 +847,7 @@ Authorization: Bearer <管理员凭证>
 ```
 
 需要ADMIN对应的`tag:manage`权限。无需请求体、Idempotency-Key或expectedVersion。
+不接受查询参数；未知或重复参数返回400及query字段提示，在查询标签和消耗后台查询配额前拒绝。
 tagId为1～64位英文字母、数字、下划线或短横线；格式错误返回422及path/tagId字段提示，合法但不存在或大小写不匹配返回404。
 
 成功返回200及`ApiResponse<Tag>`，data仅包含id、name、description、status、version。
@@ -904,6 +909,7 @@ Content-Type: application/json
 可提交name、description、status中的任意一个或多个字段；必须携带正整数expectedVersion，且至少提供一个待修改字段。
 未提交字段保持原值，显式null返回422；名称沿用创建规则去除Unicode首尾空白、1～30字符，说明最多200字符且不trim，空字符串可清空说明。
 状态为ACTIVE或DISABLED，可重新启用；未知字段、JSON类型错误或枚举非法返回400。
+expectedVersion整数值超出1～2147483647返回422及body字段提示；不接受查询参数，未知或重复参数在标签读写和限流计数前返回400。
 
 锁顺序为账号共享锁、当前角色共享锁、目标标签FOR UPDATE行锁；更新SQL仍携带id与expectedVersion条件。
 版本不匹配返回409 RESOURCE_VERSION_CONFLICT及授权后读取的currentVersion，所有字段不变。
@@ -916,7 +922,7 @@ Content-Type: application/json
 修改不改变原创建幂等快照，原创建键成功重放仍免创建配额；读取当前信息应使用详情或列表GET。
 
 实现、配置、限流、DTO与测试全部归tag模块，复用V9表、TagView、现有认证与Lua，不新增依赖或迁移。
-本接口持久化启停状态；内容/审核模块尚未实现，后续新审核引用限制和历史标签展示需由其按契约接入，不在此处伪造内容处理结果。
+本接口持久化启停状态；内容模块已支持首稿创建，提交审核尚未实现，后续新审核引用限制和历史标签展示需由相应接口按契约接入。
 真实HTTP/MySQL/Redis验证事务回滚、并发版本与重名竞争、PATCH语义及独立限流；Swagger及契约快照覆盖updateTag。
 完整验证日志为`.local-dev/tag-update-full-check.log`。
 
@@ -943,12 +949,12 @@ Controller只补充本接口特有错误，例如本人查询：
 公开接口等特殊场景可使用`includeCommon=false`，显式声明完整错误集合。
 
 成功状态、响应DTO及Location/受理轮询头仍在所属Controller声明；公共X-Request-Id及Cache-Control由配置统一描述。
-当前迁移覆盖认证、账号、媒体上传/完成/查询及标签创建的全部现有Controller；未声明`@ApiErrorResponses`的接口不会自动追加错误集合。
+当前统一错误声明覆盖认证、账号、媒体、标签和内容模块的全部现有Controller；未声明`@ApiErrorResponses`的接口不会自动追加错误集合。
 文档注解不参与权限判定或异常处理，业务流程、认证和事务仍按原模块执行。
 CommonErrorDocumentationIT验证错误码隔离、响应头、成功schema及显式关闭默认集合。
 测试资源`src/test/resources/contracts/api-v1-error-responses.json`保存从固定版本外部OpenAPI提取的已实现接口响应状态和错误码，记录来源与SHA-256，不依赖个人磁盘绝对路径。
 测试按operationId逐项比较完整错误集合，并要求快照覆盖全部已生成接口；新增接口或正式调整契约时同步更新快照，不能通过修改公共默认集合绕过校验。
-SessionAuthenticationService仍拒绝邮箱未验证的账号。BearerSessionFilter在认证失败边界将创建上传以外请求的该错误映射为403 PERMISSION_DENIED，密码登录仍由公开登录流程处理；该映射不读取Swagger注解。
+SessionAuthenticationService仍拒绝邮箱未验证的账号。BearerSessionFilter在认证失败边界仅为创建上传、创建内容保留EMAIL_VERIFICATION_REQUIRED，其余受保护请求映射为403 PERMISSION_DENIED，密码登录仍由公开登录流程处理；该映射不读取Swagger注解。
 上传查询、取消事务中的邮箱复核同样返回PERMISSION_DENIED；认证前后状态变化均不能取得上传地址或修改上传状态。
 全量验证日志为`.local-dev/controller-responses-full-check.log`。
 
@@ -970,3 +976,191 @@ AdminAuthorizationManager未新增数据库迁移。
 按TDD验证认证错误映射、16个现有接口的完整错误契约，以及上传查询/取消在认证前后邮箱状态变化时的拒绝行为。
 `mvn clean verify`通过533项测试（266项单元/Web、267项集成），0失败、0错误、0跳过，打包成功。
 本次无新增生产类、依赖或迁移，原始OpenAPI契约未修改；完整日志为`.local-dev/contract-errors-full-check.log`。
+
+2026-11-09请求校验修复：资料修改、上传完成、取消上传及标签修改统一将整数版本越界归为422，类型错误仍为400；
+后台标签详情与修改拒绝未知查询参数，与后台列表共用入口校验。相关失败请求不读取或修改标签，不占用后台标签配额。
+按TDD执行红、绿、重构后，`mvn clean verify`通过731项测试（316项单元/Web、415项集成），0失败、0错误、0跳过，打包成功。
+未新增依赖或迁移，原始OpenAPI契约未修改；完整日志为`.local-dev/request-validation-full-check.log`。
+
+## 创建内容及首个草稿
+
+```http
+POST /api/v1/creator/contents
+Authorization: Bearer <用户凭证>
+Idempotency-Key: <16～128字符>
+Content-Type: application/json
+
+{"kind":"ARTICLE","title":"事务基础","bodyMarkdown":"# 事务基础"}
+```
+
+需要邮箱已验证、账号ACTIVE且拥有USER角色，沿用CurrentUser.canCreate的资格规则；管理员和审核员保留USER角色时同样可以创作。
+返回201、ContentWorkspace及Location；内容初始ACTIVE/UNPUBLISHED、version=1，首个修订DRAFT、revisionNumber=1，未发布、未审核且未删除。
+ARTICLE与VIDEO创建后不可互转。VIDEO草稿可先不关联视频，这不代表视频上传或处理已实现。
+
+标题和正文默认空字符串，图片和标签默认空数组；上述字段显式null返回422，封面和视频允许null。
+标题最多120、正文最多100000个Unicode码点；图片最多50项、标签最多5项，数组元素不得重复，ID按契约校验。
+类型错误、未知字段或查询参数返回400；字段约束、重复ID、ARTICLE关联视频或正文图片清单不一致返回422。
+正文原文不trim、不渲染HTML。CommonMark Java 0.32.0将Markdown解析成语法树，仅统计真实图片节点，忽略代码块、行内代码和转义示例；支持引用式图片。
+正文图片必须使用asset:ID，引用集合与imageAssetIds一致，列表顺序保留。该解析不执行HTML，后续渲染仍必须禁用原生HTML执行。
+
+素材不存在或非本人统一404；封面和正文图片必须CONTENT_IMAGE，视频必须CONTENT_VIDEO，用途错误422。
+草稿可以暂存本人WAITING_UPLOAD、PROCESSING、FAILED或READY素材及已存在的停用标签；READY和ACTIVE的发布门槛由后续提交审核接口检查。
+数据库通过引用表和外键保留素材、标签关联，同一内容至多一个DRAFT/IN_REVIEW；工作修订指针不能指向其他内容的修订。
+
+幂等键按用户和createContent隔离，有效期24小时；过期键再次使用时替换旧记录。使用规范化默认字段后的请求指纹，成功重放返回首次业务结果快照，不返回后续编辑状态。
+同键不同请求409 IDEMPOTENCY_KEY_REUSED；处理中409 REQUEST_IN_PROGRESS并提供Retry-After。预留租约60秒，过期可接管，旧租约令牌不能回写或删除新结果。
+事务锁序为账号、角色、幂等记录、按ID排序的素材；claim使用局部READ_COMMITTED避免缺失幂等键的间隙锁竞争。
+Redis计数位于领取和最终写入两个短事务之间。finish再次检查账号资格、租约与引用，内容、草稿、引用和幂等快照一次提交；数据库故障整体回滚并返回503。
+释放预留记录失败时保留PROCESSING记录，后续按租约恢复，不能把预留记录当作已创建内容。
+
+独立配置app.content.creation，默认来源60次/分钟、用户100次/小时；环境变量CONTENT_CREATION_IP_PER_MINUTE_LIMIT、CONTENT_CREATION_USER_HOURLY_LIMIT及CONTENT_CREATION_REDIS_KEY_PREFIX可覆盖。
+Redis使用独立{content-create}作用域，成功幂等重放免计配额，格式与语义输入校验失败不计数；进入引用校验的业务失败可计数。
+Redis故障或执行结果无法确认返回503；429提供正整数Retry-After。
+
+V10新增community_content、content_revision、content_revision_asset、content_revision_tag、content_creation_request五张表，保留V1～V9。
+Controller、DTO、Service接口/impl、事务、配置、限流、校验、Mapper及测试全部归content模块；仅复用auth安全能力和现有素材、标签的数据访问能力。
+固定版本错误契约快照已覆盖createContent，合计21个接口；原始OpenAPI文件未改动。
+创建响应的Location已接入本人工作区GET，查询返回数据库当前状态；草稿保存已实现，审核与发布仍待后续实现。
+
+2026-11-09验证：按TDD执行红、绿、重构后，`mvn clean verify`通过839项测试
+（379项单元/Web、460项集成），0失败、0错误、0跳过，打包成功。新增106项content模块专项检查，并补充认证映射和全局契约检查。
+真实HTTP/MySQL/Redis验证首次创建、ARTICLE/VIDEO草稿、Markdown引用、当前资格复核、幂等重放与指纹冲突、并发、独立配额、事务回滚和租约令牌恢复；V10已执行。
+完整验证日志为`.local-dev/content-create-full-check.log`。
+
+## 读取本人内容工作区
+
+```http
+GET /api/v1/creator/contents/{contentId}
+Authorization: Bearer <用户凭证>
+```
+
+成功200并返回ContentWorkspace，与创建接口复用DTO。包含本人ACTIVE和DELETED内容及全部发布状态；管理员、审核员也只能读取自己的工作区，其他人的内容与不存在的内容统一404。
+邮箱须已验证并保有USER角色，WRITE_BLOCKED允许读取，DISABLED禁止。Bearer认证后，在事务内再次用账号、角色共享锁复核authVersion、状态、邮箱和当前角色；邮箱未验证按本接口契约返回PERMISSION_DENIED。
+
+读取community_content当前版本和指针，再按contentId加载workingRevision和publishedRevision及各自引用；不读取创建幂等快照，不回退到最近一条历史修订。
+空指针返回null，空图片/标签列表返回[]，引用按position排序，保留停用标签ID及素材引用。
+工作稿只接受DRAFT/IN_REVIEW，发布指针只接受APPROVED；WITHDRAWN、TAKEN_DOWN或删除后的历史发布指针不表示仍可公开访问。
+指针关联缺失、状态不一致或单值封面/视频关联重复时返回503，避免把异常数据伪装成空稿或正常工作区。
+查询不修改内容、修订、引用、时间、版本和创建幂等记录。
+
+ContentWorkspaceTransactionService使用readOnly=true及REPEATABLE_READ，同一快照组装内容、修订和引用，避免并发提交导致跨版本拼接；不对内容加写锁。
+来源沿用Tomcat现有可信代理解析后的request.getRemoteAddr，不在业务层自行解析X-Forwarded-For。
+未知或重复查询参数返回400，非法contentId返回422及path/contentId提示，均在访问内容和消耗查询配额前拒绝。
+
+列表与详情共享app.content.query，来源120次/分钟、用户60次/分钟；环境变量CONTENT_QUERY_IP_PER_MINUTE_LIMIT、CONTENT_QUERY_USER_PER_MINUTE_LIMIT和CONTENT_QUERY_REDIS_KEY_PREFIX可覆盖。
+作用域为{content-query}，与创建额度隔离。重复读取、合法ID的404均计数；429提供正整数Retry-After。Redis结果无法确认或MySQL故障返回503，不泄露连接和SQL细节。
+复用V10，无新增依赖和迁移。固定版本错误契约已覆盖getMyContentWorkspace，合计22个接口，原始OpenAPI未改动。
+
+2026-11-09验证：按TDD执行红、绿、重构后，`mvn clean verify`通过892项测试
+（392项单元/Web、500项集成），0失败、0错误、0跳过，打包成功。新增51项工作区查询及限流专项检查，并补充认证和全局契约检查。
+真实HTTP/MySQL/Redis验证创建Location读取、当前值、双修订及有序引用、删除内容、归属、资格复核、并发快照、只读性、故障及独立限流。
+完整验证日志为`.local-dev/content-workspace-full-check.log`。
+
+## 保存当前可编辑草稿
+
+```http
+PATCH /api/v1/creator/contents/{contentId}/draft
+Authorization: Bearer <用户凭证>
+Content-Type: application/json
+
+{"expectedVersion":1,"title":"更新标题"}
+```
+
+不要求Idempotency-Key；返回200及保存后的ContentWorkspace。expectedVersion取最近工作区的内容聚合版本，范围1～2147483647。
+JSON类型错误、未知字段或查询参数返回400；整数版本越界、缺失版本、仅提交版本、字段范围不符或非法显式null返回422。
+标题、正文、图片和标签可省略并保留原值，不接受null；空字符串清空标题/正文，空数组整体清空相应列表。封面和视频可用null清空，kind、作者、生命周期和发布状态不可由请求修改。
+字符串不trim，标题最多120、正文最多100000个Unicode码点；图片最多50、标签最多5，元素不得重复。
+
+账号须ACTIVE、邮箱已验证且当前保有USER角色，WRITE_BLOCKED连同值保存也禁止。其他用户或不存在的内容统一404，不返回对方版本。
+先复核归属和expectedVersion，旧版本409 CONTENT_VERSION_CONFLICT并提供currentVersion；即使目标值已相同，也不能绕过旧版本冲突。
+DELETED内容409 CONTENT_NOT_EDITABLE，需先恢复；没有工作稿、存在待审核标记或当前修订非DRAFT时409 DRAFT_NOT_EDITABLE。
+同值请求在版本和状态检查后返回200，内容版本、修订序号和各自时间均不改变；真实变化只递增一次内容version，更新内容和当前草稿的updatedAt，保留修订ID、revisionNumber和createdAt。
+达到Integer.MAX_VALUE时同值请求仍成功，真实修改409，禁止溢出。PUBLISHED、WITHDRAWN、TAKEN_DOWN下合法DRAFT可继续保存，发布快照、公开指针及发布状态不变，不解除强制下架。
+
+PATCH先与当前DRAFT合并，再复用CommonMark校验正文asset:图片引用与最终imageAssetIds集合一致。数组顺序保留，调整顺序属于真实修改。
+ContentReferenceValidator由创建和保存共用：素材须本人所有且用途正确，标签须存在。素材未READY、FAILED或标签已停用仍允许暂存，提交审核的就绪门槛尚待后续实现。
+真实修改只替换发生变化的引用用途/数组；清空正文图片时通常需同时提交bodyMarkdown和imageAssetIds，避免留下不一致引用。
+
+调用链为输入校验→短事务预检→独立Redis计数→写事务重新复核与保存。
+预检读取并校验合并后的完整草稿，不修改业务数据；格式、字段和合并校验失败不计配额，合法404与业务409按调用计数。预检释放数据库锁后再访问Redis。
+写事务再次按账号、角色、内容、当前修订、排序后的素材加锁；重新检查资格、版本、DRAFT状态及引用，防止预检后发生撤权或并发修改。
+更新SQL仍携带作者、expectedVersion、当前工作指针及DRAFT条件。内容版本、草稿文本、引用和返回工作区的读取处于同一写事务，任一步失败整体回滚。
+不更新创建幂等快照，不创建新修订、审核或处理任务，不触发发布或媒体READY推进。
+
+app.content.draft-save默认来源120次/分钟、用户60次/分钟，使用独立{content-draft-save}作用域；同值、版本冲突请求计数，与创建和查询额度隔离。
+CONTENT_DRAFT_SAVE_IP_PER_MINUTE_LIMIT、CONTENT_DRAFT_SAVE_USER_PER_MINUTE_LIMIT、CONTENT_DRAFT_SAVE_REDIS_KEY_PREFIX可覆盖配置。来源沿用Tomcat可信代理解析后的request.getRemoteAddr。
+429提供正整数Retry-After；Redis无法确认计数或数据库故障返回503，不泄露连接或SQL细节。
+复用V10，无新增迁移和依赖。固定错误契约新增editContentDraft，覆盖23个接口；原始OpenAPI未改动。
+
+2026-11-09验证：按TDD执行红、绿、重构后，`mvn clean verify`通过1005项测试
+（449项单元/Web、556项集成），0失败、0错误、0跳过，打包成功。新增111项草稿保存专项检查，并补充认证映射和全局契约检查。
+真实HTTP/MySQL/Redis验证字段存在语义、合并校验、同值、版本冲突、引用替换和清空、权限重检、冻结快照、并发单一成功、事务回滚及独立配额。
+完整验证日志为`.local-dev/content-draft-save-full-check.log`。
+
+## 查询本人创作及回收站列表
+
+```http
+GET /api/v1/creator/contents?page=1&pageSize=20&lifecycle=ACTIVE
+Authorization: Bearer <用户凭证>
+```
+
+返回200及WorkspacePage：items、page、pageSize、total；items复用完整ContentWorkspace，包括工作稿、发布稿及各自引用，不是摘要。
+仅查询认证上下文的本人数据，管理员和审核员也不扩大范围。默认lifecycle=ACTIVE；回收站传DELETED。可再按publicationStatus（UNPUBLISHED/PUBLISHED/WITHDRAWN/TAKEN_DOWN）及kind（ARTICLE/VIDEO）组合筛选，条件按AND生效。
+无匹配数据或超出末页返回200、空items和实际total，不返回404。工作/发布指针为空时保持null，不从已终结历史稿补造标题，不增加契约外顶层title。
+
+page默认1且必须为正整数，不加契约外上限；pageSize默认20、范围1～100。使用BigInteger计算偏移，超末页直接返回空页，不转换或执行溢出的分页偏移。
+固定按updatedAt倒序、ID倒序，不允许客户端任意排序。未知、重复查询参数或无法解析的分页/枚举返回400；整数分页值超出范围返回422并提供query字段提示。非法参数不消耗查询配额。
+
+邮箱须已验证且当前保有USER角色，WRITE_BLOCKED允许读取、DISABLED禁止。短事务先以账号、角色共享锁复核authVersion、状态、邮箱和角色，再查询本人内容。
+COUNT、页面记录、所有工作/发布修订和引用处于同一readOnly/REPEATABLE_READ快照，避免并发编辑或新增导致总数、页面成员及正文跨版本拼接。
+页面内批量读取修订、素材引用和标签引用，不逐条调用详情、不逐条计数；关联损坏返回503，不伪造空稿或部分成功页。查询不修改内容、修订、引用、时间、版本或创建幂等记录。
+
+列表和详情共用app.content.query及现有{content-query}作用域，来源120次/分钟、用户60次/分钟，配置可覆盖；重复查询和空页都计数，与创建和草稿保存额度隔离。
+429提供正整数Retry-After；Redis无法确认额度或MySQL故障返回503，不泄露内部连接和SQL信息。来源沿用Tomcat可信代理解析后的request.getRemoteAddr。
+扩展既有查询Controller、Service、事务与Mapper，新增WorkspacePage；不新增表、迁移、依赖或限流配置。固定版本错误契约已覆盖listMyContents，合计24个接口，原始OpenAPI未修改。
+本接口读取回收站状态，删除及恢复接口仍待后续实现。
+
+2026-11-09验证：按TDD执行红、绿、重构后，`mvn clean verify`通过1070项测试
+（481项单元/Web、589项集成），0失败、0错误、0跳过，打包成功。新增63项本人列表专项检查，并补充认证映射和全局契约检查。
+真实HTTP/MySQL/Redis验证本人范围、组合筛选、创作区/回收站、更新时间排序和ID并列排序、分页/超大页码、批量修订及引用、当前权限、并发快照、只读性、依赖故障和共享配额。
+完整验证日志为`.local-dev/content-list-full-check.log`。
+
+## 预览本人修订引用的媒体
+
+```http
+GET /api/v1/creator/contents/{contentId}/revisions/{revisionId}/media/{assetId}/access
+Authorization: Bearer <用户凭证>
+```
+
+成功200并返回MediaAccess，仅含assetId、url、expiresAt、contentType。业务响应和签名对象响应均no-store；对象URL按GET使用，支持Range，不附带业务Bearer。
+默认签名300秒，expiresAt与SigV4编码的整秒签发时间一致。过期后重新调用业务接口；篡改目标、方法、有效期或响应内容类型不能沿用原签名。
+
+邮箱须已验证并当前保有USER角色，WRITE_BLOCKED可读、DISABLED禁止。管理员和审核员在此仍只能访问本人内容，其他人的内容或素材、错误的修订所属关系、未被该修订引用或用途不匹配的素材统一404。
+按指定修订的实际引用表授权，封面/正文图片要求CONTENT_IMAGE，视频要求VIDEO内容和CONTENT_VIDEO。支持同一图片同时作为封面/正文，以及历史APPROVED/REJECTED/CANCELLED修订和本人回收站内容，不把请求限制为当前工作指针。
+先验证归属和引用，再检查状态；WAITING_UPLOAD、PROCESSING、FAILED均409 MEDIA_NOT_READY。READY但缺少实际元数据或稳定读取绑定时503，不退回原始source对象。
+非法路径ID返回422，未知/重复查询参数返回400，均在签名配额与业务查询前拒绝；没有请求体、查询参数或幂等键要求。
+
+V11为media_asset新增ready_object_key、ready_object_etag、ready_storage_id，可空且要求成组填写；原有记录及状态不回填、不提升为READY。
+结果key格式为private/{ownerId}/{assetId}/ready/{独立标识}，必须与所属素材、存储指纹匹配。后续worker完成真实格式、校验和及必要尺寸检查后，须写入新的结果key并原子绑定READY，结果key不得覆写复用；业务不会为ready路径签发PUT地址。
+使用独立结果对象，不改变MinIO桶版本控制；原始上传PUT地址仍可能有效，但覆盖source不会改变预览的结果对象。
+StorageProperties.identity沿用既有上传指纹算法，覆盖endpoint、bucket、region及凭据；配置改变时旧绑定拒绝读取，需要可信处理流程重新绑定。
+
+调用链为路径校验→独立限流→短只读事务授权及读取绑定→事务外MinIO HEAD→最终事务复核、GET签名与最小审计。
+HEAD验证结果对象真实存在、ETag和大小与绑定一致，连接超时3秒、读写5秒、调用总超时10秒；HEAD不承担真实文件格式校验。
+最终事务重新检查账号、角色、内容、修订、引用和素材状态；读取绑定须与HEAD前完全一致，期间撤权、移除引用、失败或绑定变化均不发放旧地址。
+账号、角色、内容、修订、引用及素材通过共享锁保护。MediaReadSigner只做本地SigV4签名，在事务内不访问存储网络，签名固定GET、对象路径和响应MIME/no-store/inline覆盖头。
+content_media_preview_audit只记录成功签发的最小事实：主体、内容/修订/素材、动作、requestId、签发和到期时间，不保存URL、凭据、对象路径或原始正文；审计入库失败返回503且不返回签名。当前没有审计查询/修改接口。
+存储缺失或绑定/元数据不一致、数据库故障、签名失败均503，不公开内部路径、SQL或连接详情；DTO的toString也不输出URL。
+
+app.content.media-preview独立来源120次/分钟、用户60次/分钟，与普通内容查询、创建和保存隔离；重复成功申请、合法404和409都计数，429提供正整数Retry-After。
+CONTENT_MEDIA_PREVIEW_READ_URL_TTL_SECONDS、CONTENT_MEDIA_PREVIEW_IP_PER_MINUTE_LIMIT、CONTENT_MEDIA_PREVIEW_USER_PER_MINUTE_LIMIT、CONTENT_MEDIA_PREVIEW_REDIS_KEY_PREFIX可覆盖；TTL校验1～604800秒，默认仍为300秒。
+已发出的对象签名在到期前仍有可访问窗口，移除引用、退出或后续限制账号不会立即撤销既有URL，已下载文件也无法收回；业务接口后续申请始终重新授权。
+
+授权Controller、Service、事务、配置、限流、引用查询和审计均归content；通用MediaAccess、对象核验、GET签名及存储配置归media，auth仍只提供安全上下文。
+本轮只实现私有预览和就绪对象绑定，不实现校验worker、READY推进、转码或视频上传。测试构造已就绪结果对象及元数据并使用真实MinIO验证读取，不代表这些后台处理已实现。
+原始OpenAPI未修改，固定错误契约已覆盖getDraftMediaAccess，合计25个接口。
+
+2026-11-09验证：按TDD执行红、绿、重构后，`mvn clean verify`通过1163项测试
+（519项单元/Web、644项集成），0失败、0错误、0跳过，打包成功。新增91项预览、配置、限流和存储签名专项检查，并补充认证及全局契约检查。
+真实HTTP/MySQL/Redis/MinIO验证双重归属与引用、历史/回收站、READY绑定、事务外HEAD和最终重检、旧PUT与结果对象隔离、实际GET/Range、过期及篡改拒绝、独立额度和最小审计失败；V11已执行。
+完整验证日志为`.local-dev/media-preview-full-check.log`。

@@ -183,7 +183,12 @@ class SessionEndpointTest {
             "POST, /api/v1/media/uploads/upload_1/completion, PERMISSION_DENIED",
             "GET, /api/v1/media/assets/asset_1, PERMISSION_DENIED",
             "GET, /api/v1/tasks/task_1, PERMISSION_DENIED",
-            "POST, /api/v1/media/uploads, EMAIL_VERIFICATION_REQUIRED"
+            "POST, /api/v1/media/uploads, EMAIL_VERIFICATION_REQUIRED",
+            "POST, /api/v1/creator/contents, EMAIL_VERIFICATION_REQUIRED",
+            "GET, /api/v1/creator/contents/content_1, PERMISSION_DENIED",
+            "PATCH, /api/v1/creator/contents/content_1/draft, PERMISSION_DENIED",
+            "GET, /api/v1/creator/contents, PERMISSION_DENIED",
+            "GET, /api/v1/creator/contents/content_1/revisions/revision_1/media/asset_1/access, PERMISSION_DENIED"
     })
     void unverifiedAccountIsRejectedWithTheOperationsContractCode(String method, String path, String code) throws Exception {
         when(authentication.authenticate(TOKEN))

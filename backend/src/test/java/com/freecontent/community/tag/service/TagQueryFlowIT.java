@@ -113,6 +113,24 @@ class TagQueryFlowIT {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"?status=DISABLED", "?page=1", "?expectedVersion=1", "?status=ACTIVE&status=DISABLED"})
+    void unknownQueryParametersAreRejectedBeforeReadingTags(String query) throws Exception {
+        UserAccount admin = actor("ADMIN");
+        TagEntity tag = tag(admin, TagStatus.ACTIVE);
+        Map<String, Object> before = row(tag.getId());
+        clearInvocations(tags);
+
+        var response = get(tag.getId() + query, token(admin));
+
+        assertProblem(response, 400, "MALFORMED_REQUEST");
+        assertEquals("query", JsonPath.read(response.body(), "$.violations[0].location"));
+        assertEquals(query.substring(1).split("=", 2)[0], JsonPath.read(response.body(), "$.violations[0].path"));
+        verifyNoInteractions(tags);
+        assertEquals(before, row(tag.getId()));
+        assertTrue(redis.keys(PREFIX + "{tag-query}:*").isEmpty());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"REVOKED_ADMIN", "CHANGED_AUTH_VERSION", "DISABLED", "UNVERIFIED", "WRITE_BLOCKED"})
     void currentAccountAndRoleAreRecheckedAfterBearerAuthentication(String change) throws Exception {
         UserAccount admin = actor("ADMIN");

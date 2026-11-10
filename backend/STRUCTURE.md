@@ -1,6 +1,6 @@
 # 后端结构与阅读指南
 
-后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`、`user`、`media`或`tag`，
+后端是按业务模块分包的Spring Boot应用。先按业务寻找`auth`、`user`、`media`、`tag`或`content`，
 再按控制层、业务入口、数据访问等职责定位代码。
 
 后续新增或修改代码遵循项目根目录的[业务结构约定](../AGENTS.md)：同一用例的DTO、Service、事务、限流、配置和测试归所属业务模块。
@@ -13,8 +13,9 @@
 | --- | --- |
 | `auth` | 验证码、注册、密码登录、退出、验证码重置及Redis会话认证 |
 | `user` | 当前账号与用户资料业务、修改当前账号密码、角色及数据库访问 |
-| `media` | 上传策略、私有上传会话创建、查询续签、取消、文件回收、完成确认、任务及素材查询 |
+| `media` | 上传、续签、取消回收、完成确认、任务与素材查询、就绪对象核验及GET签名 |
 | `tag` | 公开有效标签；管理员创建、详情、分页、修改与启停；名称唯一性、创建幂等及独立限流 |
+| `content` | 内容与首稿创建、本人创作/回收站分页、工作区与草稿、修订媒体预览授权、引用校验、幂等、限流和事务一致性 |
 | `common` | 统一响应、异常、请求标识、通用校验 |
 | `config` | Web、MyBatis、OpenAPI等全局配置 |
 
@@ -401,6 +402,7 @@ claim使用局部READ_COMMITTED避免缺失幂等键的间隙锁竞争，账号�
 ## 18. 管理员标签详情与列表怎样阅读
 
 1. `tag/controller/TagQueryController.java`：GET /api/v1/admin/tags/{tagId}返回TagView，GET /api/v1/admin/tags返回TagPageView；仅详情在公共错误外声明RESOURCE_NOT_FOUND。
+   `tag/controller/TagQueryParameters.java`集中校验后台标签查询参数：列表仅允许单个page/pageSize，详情和修改不接受查询参数；非法参数在调用业务服务和计数前返回400。
 2. `auth/security/AdminAuthorizationManager.java`：为两个GET分别登记ADMIN，未登记后台路由仍默认拒绝。
 3. `tag/service/TagQueryService.java`与`service/impl/TagQueryServiceImpl.java`：身份、路径及分页参数校验，共享查询配额、事务调用及依赖错误转换。
 4. `tag/service/transaction/TagQueryTransactionService.java`：共享账号与角色复核；详情按主键读取，列表按创建时间和ID倒序，用同一REPEATABLE_READ快照读取总数与分页记录。
@@ -414,6 +416,7 @@ claim使用局部READ_COMMITTED避免缺失幂等键的间隙锁竞争，账号�
 
 1. `tag/controller/TagUpdateController.java`：PATCH /api/v1/admin/tags/{tagId}，返回200及TagView，额外声明404、版本/名称冲突和请求体错误。
 2. `tag/dto/TagUpdateRequest.java`：严格JSON、字段存在标记、Unicode长度与可选字段；expectedVersion的Schema显式绑定Integer，避免JsonNode严格setter影响文档类型。
+   标签修改、资料修改、上传完成请求先用BigInteger保留版本原值，再校验1～2147483647范围，超出范围返回422；验证通过后业务层仍使用Integer。取消上传的查询参数采用相同范围规则。
 3. `tag/service/TagUpdateService.java`与`service/impl/TagUpdateServiceImpl.java`：身份、路径及PATCH输入校验、独立限流、事务调用和依赖错误转换。
 4. `tag/service/transaction/TagUpdateTransactionService.java`：账号→角色→标签固定锁序；先授权和版本校验，再处理同值与真实修改。重名和数据库异常使整次事务回滚。
 5. `tag/mapper/TagMapper.java`新增标签FOR UPDATE查询及仅更新所提供字段的条件SQL；id和expectedVersion必须匹配，版本与updated_at随真实修改一起更新。
@@ -434,7 +437,70 @@ claim使用局部READ_COMMITTED避免缺失幂等键的间隙锁竞争，账号�
 
 公开查询不分页、不缓存标签数据；停用标签不返回。账号状态不改变该公开接口的可读性，所有后台安全检查继续在原用例执行。
 
-## 21. 资源与测试
+## 21. 创建内容与首个草稿怎样阅读
+
+1. `content/controller/ContentCreationController.java`：接收POST /api/v1/creator/contents，拒绝未知查询参数，返回201、ContentWorkspace和Location。
+2. `content/dto/CreateContentRequest.java`：严格类型、字段默认值、null和Unicode长度校验；`ContentWorkspace`、`RevisionView`只返回契约字段。`model/ContentKind`定义创建后固定的类型。
+3. `content/validation/ContentDraftValidator.java`：CommonMark语法树识别真实图片，核对asset:引用集合、重复ID及ARTICLE/VIDEO约束，不执行HTML。
+4. `content/service/ContentCreationService.java`与`service/impl/ContentCreationServiceImpl.java`：输入、指纹、领取幂等预留、成功重放免计配额、独立限流、最终写入和失败释放。
+5. `content/service/transaction/ContentCreationTransactionService.java`：claim与finish分别复核当前账号和角色，局部READ_COMMITTED领取租约，finish核对租约令牌和引用并原子提交；私有方法分别处理重放快照和引用持久化。
+6. `content/mapper/ContentCreationMapper.java`处理内容、修订和引用；`ContentCreationRequestMapper`与`entity/ContentCreationRequestRecord`处理幂等预留、续租、快照及令牌保护的完成/释放。
+7. `content/config/ContentCreationProperties.java`及Configuration定义app.content.creation，并补充OpenAPI默认值；`ratelimit/ContentCreationRateLimiter.java`复用现有Lua与独立content-create作用域。
+8. `V10__content_creation.sql`新增内容、修订、素材引用、标签引用和创建幂等表，外键限制跨内容指针和悬空引用，唯一约束限制单个工作稿。
+9. `content/controller`、`validation`、`config`、`ratelimit`及`service`对应测试目录；ContentCreationFlowIT验证真实HTTP/MySQL/Redis、并发、回滚和租约恢复，全局错误契约测试覆盖createContent。
+
+auth只扩展创建内容的邮箱错误码映射；内容业务全部留在content。工作区GET和草稿保存已实现，提交审核、发布和媒体READY推进仍待后续实现。
+
+## 22. 读取本人内容工作区怎样阅读
+
+1. `content/controller/ContentWorkspaceController.java`：GET /api/v1/creator/contents/{contentId}，拒绝未知查询参数，复用ContentWorkspace及公共错误声明。
+2. `content/service/ContentWorkspaceService.java`与`service/impl/ContentWorkspaceServiceImpl.java`：身份和路径校验、独立查询配额、事务调用以及数据库故障转换。
+3. `content/service/transaction/ContentWorkspaceTransactionService.java`：账号、角色共享锁复核当前权限；readOnly/REPEATABLE_READ快照读取内容、工作稿、发布稿及引用，检查指针状态及单值关联一致性。
+4. `content/mapper/ContentWorkspaceMapper.java`：查询投影记录，根查询同时约束contentId与authorId，修订再次约束contentId，素材和标签按position排序；不读取创建快照。
+5. `content/config/ContentQueryProperties.java`、Configuration及`ratelimit/ContentQueryRateLimiter.java`：列表和详情共用app.content.query来源/用户分钟窗口，复用现有Lua与content-query作用域。
+6. `content/service/ContentWorkspaceFlowIT`覆盖真实HTTP/MySQL/Redis、所有权、删除状态、双修订、当前数据、快照并发、故障、独立限流及契约；config/ratelimit测试验证配置和原子限流。
+
+复用V10与现有响应DTO，不新增依赖或迁移。创建接口的Location现在可直接读取；草稿保存已实现，删除恢复、审核和发布仍由后续用例实现。
+
+## 23. 保存当前可编辑草稿怎样阅读
+
+1. `content/controller/ContentDraftSaveController.java`：PATCH /api/v1/creator/contents/{contentId}/draft，拒绝未知查询参数，复用ContentWorkspace与公共错误响应。
+2. `content/dto/EditDraftRequest.java`：BigInteger保留版本输入供范围校验；Setter标记字段存在，区分省略、null和空值。只允许已定义的修改字段。
+3. `content/service/ContentDraftSaveService.java`与`service/impl/ContentDraftSaveServiceImpl.java`：输入校验、预检、独立计数、重新校验并保存，转换数据库故障；不使用幂等键缓存或重放。
+4. `content/service/transaction/ContentDraftSaveTransactionService.java`：preflight与save各自持有短事务，复用inspect完成账号、角色、版本、状态、合并和引用检查；Redis位于两个事务之间。真实保存才递增版本并按变化替换引用，同值保持时间。
+5. `content/validation/ContentDraftValidator.java`复用Markdown语法树和去重规则；`ContentReferenceValidator.java`供创建与保存共用素材归属/用途及标签存在性检查。
+6. `content/mapper/ContentDraftSaveMapper.java`：所属内容与当前修订行锁、版本条件更新、仅DRAFT文本更新以及引用替换，禁止修改已发布修订或重新分配工作指针。
+7. `content/config/ContentDraftSaveProperties.java`及Configuration定义app.content.draft-save；`ratelimit/ContentDraftSaveRateLimiter.java`复用分钟窗口Lua，使用独立content-draft-save作用域。
+8. `content/controller/ContentDraftSaveEndpointTest`及`service/ContentDraftSaveFlowIT`验证类型/存在标记、同值、版本、权限、并发、冻结快照、回滚、引用和契约；config/ratelimit对应测试验证配置与原子额度。
+
+复用V10与工作区读取组件，不新增迁移和依赖；读取返回值加入现有写事务，不额外占用工作区查询额度。提交审核、新建后续修订、删除恢复和发布仍未实现。
+
+## 24. 本人创作及回收站分页怎样阅读
+
+1. `content/controller/ContentWorkspaceController.java`新增GET /api/v1/creator/contents，仅允许单个page/pageSize/lifecycle/publicationStatus/kind；与详情复用查询参数检查。
+2. `content/service/ContentWorkspaceService.java`与`service/impl/ContentWorkspaceServiceImpl.java`新增listMyContents，校验分页和枚举，默认ACTIVE，复用详情查询额度与故障转换。
+3. `content/service/transaction/ContentWorkspaceTransactionService.java`新增list：同一只读REPEATABLE_READ快照复核资格、COUNT、分页及批量加载修订/引用，与详情共用投影和一致性检查；空指针保留null。
+4. `content/mapper/ContentWorkspaceMapper.java`：COUNT和页面SQL复用本人及筛选条件，固定updated_at/id倒序；批量读取页内工作稿和发布稿，限制修订所属contentId，引用按position排序，避免N+1查询。
+5. `content/dto/WorkspacePage.java`返回items/page/pageSize/total，items复用ContentWorkspace；BigInteger页码超末页直接返回空页，不加契约外上限。
+6. `content/controller/ContentListEndpointTest`覆盖参数边界、重复/未知字段与计数前拒绝；`content/service/ContentListFlowIT`覆盖真实HTTP/MySQL/Redis、回收站和组合筛选、稳定排序、批量引用、权限、并发快照、故障与共享额度。
+
+复用app.content.query、V10与响应工作区模型；不新增配置组、依赖或迁移。列表只读取回收站状态，删除恢复仍待后续用例实现。
+
+## 25. 本人修订媒体预览怎样阅读
+
+1. `content/controller/ContentMediaPreviewController.java`：GET /api/v1/creator/contents/{contentId}/revisions/{revisionId}/media/{assetId}/access，拒绝未知查询参数，返回MediaAccess，不要求幂等键。
+2. `content/service/ContentMediaPreviewService.java`与`service/impl/ContentMediaPreviewServiceImpl.java`：路径、独立额度、prepare、事务外对象核验、finish及数据库故障转换。
+3. `content/service/transaction/ContentMediaPreviewTransactionService.java`：两次复核当前资格、内容/修订/素材归属、真实引用及用途，比较读取绑定，最终本地签名并原子写最小审计；不把历史修订或回收站内容视为公开对象。
+4. `content/mapper/ContentMediaPreviewMapper.java`：共享锁读取本人内容、所属修订及引用用途，插入只含主体/目标/requestId/时间的审计记录。与`media/mapper/MediaAssetMapper.findOwnedForShare`组合校验素材。
+5. `media/storage/MediaObjectReader.java`：验证独立ready key、存储指纹和实际元数据，在事务外HEAD核对ETag/大小；`MediaReadSigner.java`离线签发GET及no-store/MIME响应覆盖参数。
+6. `media/dto/MediaAccess.java`只有契约四个字段，toString隐藏URL；`StorageProperties.identity`保持旧上传指纹算法，UploadSigner继续复用同一结果。
+7. `content/config/ContentMediaPreviewProperties.java`及Configuration定义app.content.media-preview，默认TTL300秒、来源120/分钟、用户60/分钟；RateLimiter使用独立content-media-preview作用域。
+8. `V11__media_preview_binding_and_audit.sql`增加素材成组的结果key/ETag/存储指纹及content_media_preview_audit；不回填READY、不改变桶版本控制，不改写已执行迁移。
+9. `ContentMediaPreviewFlowIT`覆盖真实HTTP/MySQL/Redis/MinIO、双重归属和引用、历史/回收站、权限重检、旧PUT隔离、读取绑定和审计失败；Endpoint/config/ratelimit及`media/storage/MediaReadSignerTest/IT`覆盖路径、额度、整秒过期、Range及篡改拒绝。
+
+普通查询不调用此签名流程；处理worker仍未实现。后续worker须把校验结果写入全新ready key，设置实际元数据及绑定，再原子推进READY。已发签名仅由到期窗口约束，后续申请会重新校验权限和引用。
+
+## 26. 资源与测试
 
 - `src/main/resources/application.yml`：环境连接与业务参数。
 - `src/main/resources/db/migration/`：Flyway迁移，已执行版本保持不变。

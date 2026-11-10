@@ -8,10 +8,12 @@ import com.freecontent.community.user.validation.ValidProfileUpdate;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import tools.jackson.databind.JsonNode;
+import java.math.BigInteger;
 
 /** Setter仅在字段出现时调用，显式null也保留为一次修改。 */
 @ValidProfileUpdate
@@ -20,8 +22,8 @@ import tools.jackson.databind.JsonNode;
         requiredProperties = "expectedVersion", minProperties = 2,
         additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 public class UpdateProfileRequest {
-    // 32位整数，客户端必须提供当前版本号以防止并发修改覆盖
-    @NotNull @Positive private Integer expectedVersion;
+    // 先保留整数原值完成范围校验，避免越界值在JSON绑定时被误判为类型错误。
+    @NotNull @Positive @Max(Integer.MAX_VALUE) private BigInteger expectedVersion;
     // 昵称、个人简介、头像允许null清空，未提供保持原值
     @CodePointLength(min = 1, max = 40, message = "昵称长度必须为1到40个字符") private String displayName;
     @CodePointLength(max = 500, message = "个人简介最多500个字符") private String bio;
@@ -31,8 +33,8 @@ public class UpdateProfileRequest {
     private boolean avatarAssetIdProvided;
 
     // 32位整数，客户端必须提供当前版本号以防止并发修改覆盖
-    @Schema(type = "integer", format = "int32", minimum = "1", maximum = "2147483647")
-    public Integer getExpectedVersion() { return expectedVersion; }
+    @Schema(implementation = Integer.class, type = "integer", format = "int32", minimum = "1", maximum = "2147483647")
+    public Integer getExpectedVersion() { return expectedVersion == null ? null : expectedVersion.intValueExact(); }
 
     // 昵称、个人简介、头像允许null清空，未提供保持原值
     @Schema(type = "string", minLength = 1, maxLength = 40)
@@ -51,8 +53,8 @@ public class UpdateProfileRequest {
     public void setExpectedVersion(JsonNode value) {
         if (value == null || value.isNull()) expectedVersion = null;
         else {
-            if (!value.isIntegralNumber() || !value.canConvertToInt()) throw new IllegalArgumentException("版本必须为32位整数");
-            expectedVersion = value.intValue();
+            if (!value.isIntegralNumber()) throw new IllegalArgumentException("版本必须为整数");
+            expectedVersion = value.bigIntegerValue();
         }
     }
 

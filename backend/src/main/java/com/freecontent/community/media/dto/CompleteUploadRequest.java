@@ -7,16 +7,18 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import tools.jackson.databind.JsonNode;
+import java.math.BigInteger;
 import java.util.List;
 
 @Schema(requiredProperties = "expectedVersion", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 public class CompleteUploadRequest {
-    @NotNull @Positive private Integer expectedVersion;
+    // 先校验范围，校验通过后业务层仍使用Integer版本。
+    @NotNull @Positive @Max(Integer.MAX_VALUE) private BigInteger expectedVersion;
     @Size(min = 1, max = 10000) private List<@Valid CompletedPart> parts;
     private boolean partsProvided;
 
-    @Schema(type = "integer", format = "int32", minimum = "1", maximum = "2147483647")
-    public Integer getExpectedVersion() { return expectedVersion; }
+    @Schema(implementation = Integer.class, type = "integer", format = "int32", minimum = "1", maximum = "2147483647")
+    public Integer getExpectedVersion() { return expectedVersion == null ? null : expectedVersion.intValueExact(); }
     @ArraySchema(minItems = 1, maxItems = 10000, schema = @Schema(implementation = CompletedPart.class),
             arraySchema = @Schema(description = "MULTIPART提交全部分片；当前SINGLE必须省略"))
     public List<CompletedPart> getParts() { return parts; }
@@ -26,8 +28,8 @@ public class CompleteUploadRequest {
     public void setExpectedVersion(JsonNode value) {
         if (value == null || value.isNull()) expectedVersion = null;
         else {
-            if (!value.isIntegralNumber() || !value.canConvertToInt()) throw new IllegalArgumentException("版本必须为32位整数");
-            expectedVersion = value.intValue();
+            if (!value.isIntegralNumber()) throw new IllegalArgumentException("版本必须为整数");
+            expectedVersion = value.bigIntegerValue();
         }
     }
     @JsonSetter(value = "parts", nulls = Nulls.SET)

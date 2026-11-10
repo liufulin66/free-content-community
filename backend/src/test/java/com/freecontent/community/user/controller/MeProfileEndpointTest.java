@@ -10,6 +10,8 @@ import com.freecontent.community.user.entity.UserAccount;
 import com.freecontent.community.user.model.UserRole;
 import com.freecontent.community.user.service.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -110,6 +112,20 @@ class MeProfileEndpointTest {
                             .content(json.writeValueAsString(body)))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
         }
+        verifyNoInteractions(profiles);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2147483648", "-2147483649", "9223372036854775808", "9999999999999999999999999999999999999999"})
+    void integerVersionOutsideTheContractRangeReturns422(String version) throws Exception {
+        authenticate(false);
+        mvc.perform(patch("/api/v1/me").header("Authorization", "Bearer " + TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + version + ",\"bio\":\"test\"}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.violations[0].location").value("body"))
+                .andExpect(jsonPath("$.violations[0].path").value("expectedVersion"));
         verifyNoInteractions(profiles);
     }
 

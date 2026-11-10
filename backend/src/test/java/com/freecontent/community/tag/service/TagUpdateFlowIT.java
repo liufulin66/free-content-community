@@ -174,6 +174,24 @@ class TagUpdateFlowIT {
         assertTrue(redis.keys(PREFIX + "{tag-update}:*").isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"?status=ACTIVE", "?page=1", "?expectedVersion=99", "?status=ACTIVE&status=DISABLED"})
+    void unknownQueryParametersAreRejectedBeforeChangingTags(String query) throws Exception {
+        UserAccount admin = actor("ADMIN");
+        TagEntity tag = tag(admin, TagStatus.ACTIVE);
+        Map<String, Object> before = row(tag.getId());
+        clearInvocations(tags);
+
+        var response = patch(tag.getId() + query, token(admin), "{\"expectedVersion\":1,\"status\":\"DISABLED\"}");
+
+        assertProblem(response, 400, "MALFORMED_REQUEST");
+        assertEquals("query", JsonPath.read(response.body(), "$.violations[0].location"));
+        assertEquals(query.substring(1).split("=", 2)[0], JsonPath.read(response.body(), "$.violations[0].path"));
+        verifyNoInteractions(tags);
+        assertEquals(before, row(tag.getId()));
+        assertTrue(redis.keys(PREFIX + "{tag-update}:*").isEmpty());
+    }
+
     static Stream<Arguments> invalidPatches() {
         return Stream.of(
                 Arguments.of("{}", 422, "expectedVersion"),
@@ -189,7 +207,7 @@ class TagUpdateFlowIT {
                 Arguments.of("{\"expectedVersion\":\"1\",\"status\":\"DISABLED\"}", 400, ""),
                 Arguments.of("{\"expectedVersion\":1.0,\"status\":\"DISABLED\"}", 400, ""),
                 Arguments.of("{\"expectedVersion\":true,\"status\":\"DISABLED\"}", 400, ""),
-                Arguments.of("{\"expectedVersion\":2147483648,\"status\":\"DISABLED\"}", 400, ""),
+                Arguments.of("{\"expectedVersion\":2147483648,\"status\":\"DISABLED\"}", 422, "expectedVersion"),
                 Arguments.of("{\"expectedVersion\":1,\"name\":123}", 400, ""),
                 Arguments.of("{\"expectedVersion\":1,\"description\":true}", 400, ""),
                 Arguments.of("{\"expectedVersion\":1,\"status\":0}", 400, ""),

@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
 import com.freecontent.community.media.config.StorageProperties;
@@ -38,7 +37,7 @@ public class UploadSigner {
     }
 
     public String identity() {
-        return TokenDigest.sha256(String.join("\n", storage.endpoint(), storage.bucket(), storage.region(), storage.accessKey(), storage.secretKey()));
+        return storage.identity();
     }
 
     public UploadTarget sign(MediaUpload upload, long contentLength, String sha256Hex) {

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -57,7 +58,7 @@ class UploadCompletionEndpointTest {
                 Arguments.of("{}", 422), Arguments.of("{\"expectedVersion\":null}", 422),
                 Arguments.of("{\"expectedVersion\":0}", 422), Arguments.of("{\"expectedVersion\":-1}", 422),
                 Arguments.of("{\"expectedVersion\":\"1\"}", 400), Arguments.of("{\"expectedVersion\":1.0}", 400),
-                Arguments.of("{\"expectedVersion\":true}", 400), Arguments.of("{\"expectedVersion\":2147483648}", 400),
+                Arguments.of("{\"expectedVersion\":true}", 400), Arguments.of("{\"expectedVersion\":2147483648}", 422),
                 Arguments.of("{\"expectedVersion\":1,\"ownerId\":\"other\"}", 400),
                 Arguments.of("{\"expectedVersion\":1,\"partsProvided\":false}", 400),
                 Arguments.of("{\"expectedVersion\":1,\"parts\":1}", 400),
@@ -66,5 +67,18 @@ class UploadCompletionEndpointTest {
                 Arguments.of("{\"expectedVersion\":1,\"parts\":[{\"partNumber\":0,\"etag\":\"a\"}]}", 422),
                 Arguments.of("{\"expectedVersion\":1,\"parts\":[]}", 422),
                 Arguments.of("[]", 400), Arguments.of("null", 400), Arguments.of("{", 400));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2147483648", "-2147483649", "9223372036854775808", "9999999999999999999999999999999999999999"})
+    void integerVersionOutsideTheContractRangeReturns422(String version) throws Exception {
+        mvc.perform(post("/api/v1/media/uploads/upload_1/completion")
+                        .header("Authorization", "Bearer " + TOKEN).header("Idempotency-Key", "1234567890123456")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":" + version + "}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.violations[0].location").value("body"))
+                .andExpect(jsonPath("$.violations[0].path").value("expectedVersion"));
+        verifyNoInteractions(service);
     }
 }

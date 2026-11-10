@@ -13,6 +13,9 @@ public interface MediaAssetMapper extends BaseMapper<MediaAsset> {
     @Select("SELECT * FROM media_asset WHERE id=#{id} AND owner_id=#{owner}")
     MediaAsset findOwned(@Param("id") String id, @Param("owner") String owner);
 
+    @Select("SELECT * FROM media_asset WHERE id=#{id} AND owner_id=#{owner} FOR SHARE")
+    MediaAsset findOwnedForShare(@Param("id") String id,@Param("owner") String owner);
+
     @Update("UPDATE media_asset SET state='PROCESSING' WHERE id=#{id} AND owner_id=#{owner} AND state='WAITING_UPLOAD'")
     int startProcessing(@Param("id") String id, @Param("owner") String owner);
 

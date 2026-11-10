@@ -59,6 +59,24 @@ mybatis-plus:
       id-type: assign_uuid
 
 app:
+  content:
+    media-preview:
+      read-url-ttl-seconds: ${CONTENT_MEDIA_PREVIEW_READ_URL_TTL_SECONDS:300}
+      ip-per-minute-limit: ${CONTENT_MEDIA_PREVIEW_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_MEDIA_PREVIEW_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_MEDIA_PREVIEW_REDIS_KEY_PREFIX:fc:content:}
+    draft-save:
+      ip-per-minute-limit: ${CONTENT_DRAFT_SAVE_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_DRAFT_SAVE_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_DRAFT_SAVE_REDIS_KEY_PREFIX:fc:content:}
+    query:
+      ip-per-minute-limit: ${CONTENT_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_QUERY_REDIS_KEY_PREFIX:fc:content:}
+    creation:
+      ip-per-minute-limit: ${CONTENT_CREATION_IP_PER_MINUTE_LIMIT:60}
+      user-hourly-limit: ${CONTENT_CREATION_USER_HOURLY_LIMIT:100}
+      redis-key-prefix: ${CONTENT_CREATION_REDIS_KEY_PREFIX:fc:content:}
   tag:
     active-query:
       ip-per-minute-limit: ${TAG_ACTIVE_QUERY_IP_PER_MINUTE_LIMIT:120}

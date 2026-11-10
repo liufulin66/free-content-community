@@ -2,6 +2,7 @@ package com.freecontent.community.media.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.net.URI;
+import com.freecontent.community.auth.security.TokenDigest;
 
 @ConfigurationProperties("app.storage")
 public record StorageProperties(String endpoint, String accessKey, String secretKey, String bucket, String region) {
@@ -19,4 +20,5 @@ public record StorageProperties(String endpoint, String accessKey, String secret
         }
     }
     @Override public String toString() { return "StorageProperties[credentials=REDACTED]"; }
+    public String identity() { return TokenDigest.sha256(String.join("\n",endpoint,bucket,region,accessKey,secretKey)); }
 }

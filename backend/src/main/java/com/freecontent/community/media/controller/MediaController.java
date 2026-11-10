@@ -1,6 +1,8 @@
 package com.freecontent.community.media.controller;
 
 import java.net.URI;
+import java.math.BigInteger;
+import java.util.List;
 
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
@@ -22,6 +24,8 @@ import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.api.ApiErrorResponses;
 import com.freecontent.community.common.api.ApiResponse;
 import com.freecontent.community.common.api.RequestIdFilter;
+import com.freecontent.community.common.error.BusinessException;
+import com.freecontent.community.common.error.ProblemDetailResponse;
 import com.freecontent.community.media.dto.CreateUploadRequest;
 import com.freecontent.community.media.dto.UploadPolicy;
 import com.freecontent.community.media.dto.UploadSession;
@@ -80,9 +84,13 @@ public class MediaController {
     @ApiErrorResponses({RESOURCE_NOT_FOUND, UPLOAD_STATE_CONFLICT})
     public ResponseEntity<Void> cancelMyUpload(
             @Parameter(schema = @Schema(minLength = 1, maxLength = 64, pattern = "^[A-Za-z0-9_-]+$")) @PathVariable String uploadId,
-            @Parameter(schema = @Schema(minimum = "1", maximum = "2147483647", type = "integer", format = "int32")) @RequestParam Integer expectedVersion,
+            @Parameter(schema = @Schema(implementation = Integer.class, minimum = "1", maximum = "2147483647", type = "integer", format = "int32")) @RequestParam BigInteger expectedVersion,
             @Parameter(hidden = true) @AuthenticationPrincipal SessionPrincipal principal, HttpServletRequest request) {
-        cancellations.cancel(uploadId, expectedVersion, principal, request.getRemoteAddr());
+        if (expectedVersion.signum() <= 0 || expectedVersion.compareTo(BigInteger.valueOf(Integer.MAX_VALUE)) > 0) {
+            throw new BusinessException(VALIDATION_ERROR, "版本超出允许范围", null, null,
+                    List.of(ProblemDetailResponse.Violation.query("expectedVersion", "必须在1到2147483647之间")));
+        }
+        cancellations.cancel(uploadId, expectedVersion.intValueExact(), principal, request.getRemoteAddr());
         return ResponseEntity.noContent().build();
     }
 

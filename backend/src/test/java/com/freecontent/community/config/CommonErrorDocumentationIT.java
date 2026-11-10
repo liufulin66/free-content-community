@@ -37,6 +37,11 @@ class CommonErrorDocumentationIT {
         var response = client.send(request, HttpResponse.BodyHandlers.ofString()); assertEquals(200, response.statusCode());
         for (String[] endpoint : List.of(new String[]{"/api/v1/admin/tags", "post", "201"},
                 new String[]{"/api/v1/media/uploads/{uploadId}/completion", "post", "202"},
+                new String[]{"/api/v1/creator/contents", "post", "201"},
+                new String[]{"/api/v1/creator/contents/{contentId}", "get", "200"},
+                new String[]{"/api/v1/creator/contents/{contentId}/draft", "patch", "200"},
+                new String[]{"/api/v1/creator/contents", "get", "200"},
+                new String[]{"/api/v1/creator/contents/{contentId}/revisions/{revisionId}/media/{assetId}/access", "get", "200"},
                 new String[]{"/api/v1/media/assets/{assetId}", "get", "200"}, new String[]{"/api/v1/tasks/{taskId}", "get", "200"})) {
             Map<String, Object> success = JsonPath.read(response.body(), "$.paths['" + endpoint[0] + "']." + endpoint[1] + ".responses['" + endpoint[2] + "']");
             Map<?, ?> content = (Map<?, ?>) success.get("content");

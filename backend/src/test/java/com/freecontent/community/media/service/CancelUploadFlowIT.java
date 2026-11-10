@@ -164,14 +164,14 @@ class CancelUploadFlowIT {
     }
 
     @Test
-    void invalidIdAndNonpositiveVersionsHaveExplicitFieldViolations() throws Exception {
+    void invalidIdAndOutOfRangeVersionsHaveExplicitFieldViolations() throws Exception {
         UserAccount user = fixture();
         String token = token(user);
         String id = JsonPath.read(create(token, UUID.randomUUID().toString()).body(), "$.data.id");
         HttpResponse<String> badId = cancel("invalid.id", "1", token);
         assertEquals(422, badId.statusCode());
         assertEquals("path", JsonPath.read(badId.body(), "$.violations[0].location"));
-        for (String version : List.of("0", "-1")) {
+        for (String version : List.of("0", "-1", "2147483648", "-2147483649", "9223372036854775808")) {
             HttpResponse<String> response = cancel(id, version, token);
             assertEquals(422, response.statusCode());
             assertEquals("query", JsonPath.read(response.body(), "$.violations[0].location"));
@@ -186,7 +186,7 @@ class CancelUploadFlowIT {
         String token = token(user);
         String id = JsonPath.read(create(token, UUID.randomUUID().toString()).body(), "$.data.id");
         assertEquals(400, cancel(id, null, token).statusCode());
-        for (String version : List.of("1.5", "2147483648", "abc")) assertEquals(400, cancel(id, version, token).statusCode());
+        for (String version : List.of("1.5", "abc")) assertEquals(400, cancel(id, version, token).statusCode());
         assertEquals("UPLOADING", jdbc.queryForObject("SELECT state FROM media_upload_session WHERE id=?", String.class, id));
     }
 

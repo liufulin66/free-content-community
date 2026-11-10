@@ -76,10 +76,10 @@ public class BearerSessionFilter extends OncePerRequestFilter {
 
     private BusinessException contractAuthenticationFailure(HttpServletRequest request, BusinessException failure) {
         if (failure.errorCode() != ErrorCode.EMAIL_VERIFICATION_REQUIRED) return failure;
-        // 当前已实现的受保护接口中，仅创建上传的契约声明邮箱未验证这一专用错误码。
+        // 创建上传与内容的契约声明邮箱未验证专用错误码，其余接口映射为通用权限错误。
         // 仍拒绝其余请求，只将对外错误码收敛为契约允许的PERMISSION_DENIED。
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        if ("POST".equals(request.getMethod()) && "/api/v1/media/uploads".equals(path)) return failure;
+        if ("POST".equals(request.getMethod()) && Set.of("/api/v1/media/uploads", "/api/v1/creator/contents").contains(path)) return failure;
         return new BusinessException(ErrorCode.PERMISSION_DENIED, failure.getMessage());
     }
 
