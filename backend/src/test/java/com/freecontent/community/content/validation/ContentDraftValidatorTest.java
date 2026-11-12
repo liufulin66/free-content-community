@@ -2,7 +2,7 @@ package com.freecontent.community.content.validation;
 
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
-import com.freecontent.community.content.dto.CreateContentRequest;
+import com.freecontent.community.content.model.ContentDraftData;
 import com.freecontent.community.content.model.ContentKind;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -55,16 +55,15 @@ class ContentDraftValidatorTest {
 
     @Test
     void rejectsDuplicateTagsAndVideoOnArticles() {
-        var request = input("", List.of()); request.setTagIds(List.of("tag", "tag"));
-        assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class, () -> validator.validate(request)).errorCode());
-        request.setTagIds(List.of()); request.setVideoAssetId("video");
-        assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class, () -> validator.validate(request)).errorCode());
-        request.setKind(ContentKind.VIDEO);
-        assertDoesNotThrow(() -> validator.validate(request));
+        var duplicateTags = new ContentDraftData(ContentKind.ARTICLE, "", "", null, List.of(), null, List.of("tag", "tag"));
+        assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class, () -> validator.validate(duplicateTags)).errorCode());
+        var articleVideo = new ContentDraftData(ContentKind.ARTICLE, "", "", null, List.of(), "video", List.of());
+        assertEquals(ErrorCode.VALIDATION_ERROR, assertThrows(BusinessException.class, () -> validator.validate(articleVideo)).errorCode());
+        var video = new ContentDraftData(ContentKind.VIDEO, "", "", null, List.of(), "video", List.of());
+        assertDoesNotThrow(() -> validator.validate(video));
     }
 
-    private CreateContentRequest input(String markdown, List<String> images) {
-        var input = new CreateContentRequest(); input.setKind(ContentKind.ARTICLE);
-        input.setBodyMarkdown(markdown); input.setImageAssetIds(images); return input;
+    private ContentDraftData input(String markdown, List<String> images) {
+        return new ContentDraftData(ContentKind.ARTICLE, "", markdown, null, images, null, List.of());
     }
 }

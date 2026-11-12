@@ -1,7 +1,7 @@
 package com.freecontent.community.content.validation;
 
 import com.freecontent.community.common.error.*;
-import com.freecontent.community.content.dto.CreateContentRequest;
+import com.freecontent.community.content.model.ContentDraftData;
 import com.freecontent.community.content.model.ContentKind;
 import org.commonmark.node.AbstractVisitor;
 import org.commonmark.node.Image;
@@ -14,14 +14,14 @@ import java.util.*;
 public class ContentDraftValidator {
     private final Parser parser = Parser.builder().build();
 
-    public void validate(CreateContentRequest input) {
-        unique(input.getImageAssetIds(), "imageAssetIds");
-        unique(input.getTagIds(), "tagIds");
-        if (input.getKind() == ContentKind.ARTICLE && input.getVideoAssetId() != null) {
+    public void validate(ContentDraftData input) {
+        unique(input.imageAssetIds(), "imageAssetIds");
+        unique(input.tagIds(), "tagIds");
+        if (input.kind() == ContentKind.ARTICLE && input.videoAssetId() != null) {
             throw invalid("videoAssetId", "ARTICLE不能关联视频素材");
         }
         Set<String> images = new HashSet<>();
-        parser.parse(input.getBodyMarkdown()).accept(new AbstractVisitor() {
+        parser.parse(input.bodyMarkdown()).accept(new AbstractVisitor() {
             @Override public void visit(Image image) {
                 String destination = image.getDestination();
                 if (!destination.matches("asset:[A-Za-z0-9_-]{1,64}")) {
@@ -30,7 +30,7 @@ public class ContentDraftValidator {
                 images.add(destination.substring("asset:".length()));
             }
         });
-        if (!images.equals(new HashSet<>(input.getImageAssetIds()))) {
+        if (!images.equals(new HashSet<>(input.imageAssetIds()))) {
             throw invalid("imageAssetIds", "正文图片引用必须与imageAssetIds一致");
         }
     }

@@ -1,11 +1,5 @@
 package com.freecontent.community.auth.config;
 
-import com.freecontent.community.auth.security.AdminAuthorizationManager;
-import com.freecontent.community.auth.security.BearerSessionFilter;
-import com.freecontent.community.auth.service.SessionAuthenticationService;
-import com.freecontent.community.common.error.BusinessException;
-import com.freecontent.community.common.error.ErrorCode;
-import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +13,18 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
+import com.freecontent.community.auth.security.AdminAuthorizationManager;
+import com.freecontent.community.auth.security.BearerSessionFilter;
+import com.freecontent.community.auth.service.SessionAuthenticationService;
+import com.freecontent.community.common.error.BusinessException;
+import com.freecontent.community.common.error.ErrorCode;
+
+import jakarta.servlet.DispatcherType;
+
 @Configuration(proxyBeanMethods = false)
 @EnableWebSecurity
 public class SecurityConfiguration {
+
     @Bean
     public AdminAuthorizationManager adminAuthorizationManager() {
         return new AdminAuthorizationManager();
@@ -48,6 +51,9 @@ public class SecurityConfiguration {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.POST, BearerSessionFilter.PUBLIC_AUTH_PATHS.toArray(String[]::new)).permitAll()
                         .requestMatchers(HttpMethod.GET, BearerSessionFilter.PUBLIC_READ_PATHS.toArray(String[]::new)).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/contents", "/api/v1/contents/{contentId}",
+                                "/api/v1/users/{userId}", "/api/v1/users/{userId}/contents",
+                                "/api/v1/contents/{contentId}/media/{assetId}/access").permitAll()
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/api/v1/admin/**").access(adminAuthorization)
                         .anyRequest().authenticated())

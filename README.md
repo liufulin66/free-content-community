@@ -1,7 +1,7 @@
 # 免费技术内容社区
 
 - `infra/`：本地中间件（Docker Compose：MySQL、Redis、RabbitMQ、MinIO、Mailpit，ES 按需）
-- `backend/`：Spring Boot 4.1.2 + JDK 17 后端骨架
+- `backend/`：Spring Boot 4.1.2 + JDK 17 后端应用
 - API 契约：本地 `project-docs` 目录（不随仓库分发）
 
 ## 前后端统一启动（Nginx）

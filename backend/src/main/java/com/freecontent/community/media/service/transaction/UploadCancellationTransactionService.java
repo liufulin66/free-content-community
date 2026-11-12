@@ -1,12 +1,12 @@
 package com.freecontent.community.media.service.transaction;
 
+import com.freecontent.community.user.service.AccountAccessService;
+import com.freecontent.community.user.model.AccountSnapshot;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.media.config.UploadCleanupProperties;
 import com.freecontent.community.media.entity.*;
 import com.freecontent.community.media.mapper.*;
-import com.freecontent.community.user.entity.UserAccount;
-import com.freecontent.community.user.mapper.UserAccountMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
@@ -15,16 +15,16 @@ import java.util.UUID;
 /** 账号→会话→素材固定锁序，取消状态、素材终态及清理任务共享一次提交。 */
 @Service
 public class UploadCancellationTransactionService {
-    private final UserAccountMapper users;
+    private final AccountAccessService accounts;
     private final MediaUploadMapper uploads;
     private final MediaAssetMapper assets;
     private final UploadCleanupTaskMapper tasks;
     private final UploadCleanupProperties properties;
     private final Clock clock;
 
-    public UploadCancellationTransactionService(UserAccountMapper users, MediaUploadMapper uploads, MediaAssetMapper assets,
+    public UploadCancellationTransactionService(AccountAccessService accounts, MediaUploadMapper uploads, MediaAssetMapper assets,
             UploadCleanupTaskMapper tasks, UploadCleanupProperties properties, Clock clock) {
-        this.users = users;
+        this.accounts = accounts;
         this.uploads = uploads;
         this.assets = assets;
         this.tasks = tasks;
@@ -35,10 +35,10 @@ public class UploadCancellationTransactionService {
     @Transactional
     public void cancel(String id, int expectedVersion, SessionPrincipal principal) {
         String owner = principal.user().id();
-        UserAccount account = users.findByIdForUpdate(owner);
-        if (account == null || account.getAuthVersion() == null || account.getAuthVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        if (account.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(account.getEmailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备取消上传权限");
+        AccountSnapshot account = accounts.findByIdForUpdate(owner);
+        if (account == null || account.authVersion() == null || account.authVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        if (!account.active()) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
+        if (!Boolean.TRUE.equals(account.emailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备取消上传权限");
         MediaUpload upload = uploads.findOwnedForUpdate(id, owner);
         if (upload == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         if ("CANCELLED".equals(upload.getState())) return;

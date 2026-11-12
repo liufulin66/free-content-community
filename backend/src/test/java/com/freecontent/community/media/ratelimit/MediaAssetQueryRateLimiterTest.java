@@ -14,6 +14,13 @@ class MediaAssetQueryRateLimiterTest {
     private final MediaAssetQueryRateLimiter limiter = new MediaAssetQueryRateLimiter(redis,
             new MediaAssetQueryProperties(120, 60, "test:asset-query:"));
 
+    @Test void malformedRedisRepliesReturnDependencyUnavailable() {
+        doReturn(java.util.List.of("unexpected", 0L))
+                .when(redis).execute(any(RedisScript.class), anyList(), any(), any());
+        var failure = assertThrows(BusinessException.class, () -> limiter.acquire("owner", "source"));
+        assertEquals(ErrorCode.DEPENDENCY_UNAVAILABLE, failure.errorCode());
+    }
+
     @Test void redisConnectionFailureReturns503WithoutLeakingDetails() {
         doThrow(new RedisConnectionFailureException("internal connection details"))
                 .when(redis).execute(any(RedisScript.class), anyList(), any(), any());

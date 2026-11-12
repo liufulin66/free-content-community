@@ -2,6 +2,50 @@
   "source": "api-v1-20261103-01a19f20/openapi.json",
   "sourceSha256": "e3359e24fa1182287772810ac16968e83533022ed40f721f239ba3b58af01b21",
   "operations": {
+    "getPublishedMediaAccess": {
+      "path": "/api/v1/contents/{contentId}/media/{assetId}/access",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": ["MALFORMED_REQUEST"],
+        "401": ["AUTHENTICATION_REQUIRED"],
+        "404": ["RESOURCE_NOT_FOUND"],
+        "409": ["MEDIA_NOT_READY"],
+        "422": ["VALIDATION_ERROR"],
+        "429": ["RATE_LIMITED"],
+        "500": ["INTERNAL_ERROR"],
+        "503": ["DEPENDENCY_UNAVAILABLE"]
+      }
+    },
+    "listUserContents": {
+      "path": "/api/v1/users/{userId}/contents",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": ["MALFORMED_REQUEST", "CURSOR_INVALID"],
+        "401": ["AUTHENTICATION_REQUIRED"],
+        "404": ["RESOURCE_NOT_FOUND"],
+        "410": ["CURSOR_EXPIRED"],
+        "422": ["VALIDATION_ERROR"],
+        "429": ["RATE_LIMITED"],
+        "500": ["INTERNAL_ERROR"],
+        "503": ["DEPENDENCY_UNAVAILABLE"]
+      }
+    },
+    "getPublicUser": {
+      "path": "/api/v1/users/{userId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": ["MALFORMED_REQUEST"],
+        "401": ["AUTHENTICATION_REQUIRED"],
+        "404": ["RESOURCE_NOT_FOUND"],
+        "422": ["VALIDATION_ERROR"],
+        "429": ["RATE_LIMITED"],
+        "500": ["INTERNAL_ERROR"],
+        "503": ["DEPENDENCY_UNAVAILABLE"]
+      }
+    },
     "createEmailChallenge": {
       "path": "/api/v1/auth/email-challenges",
       "method": "post",
@@ -837,6 +881,328 @@
         ],
         "409": [
           "MEDIA_NOT_READY"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "submitContentReview": {
+      "path": "/api/v1/creator/contents/{contentId}/reviews",
+      "method": "post",
+      "responses": {
+        "201": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "CONTENT_VERSION_CONFLICT",
+          "DRAFT_NOT_EDITABLE",
+          "REVIEW_ALREADY_PENDING",
+          "MEDIA_NOT_READY",
+          "CONTENT_NOT_EDITABLE",
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getMyReview": {
+      "path": "/api/v1/creator/contents/{contentId}/reviews/{reviewId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "listAdminReviews": {
+      "path": "/api/v1/admin/reviews",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getAdminReview": {
+      "path": "/api/v1/admin/reviews/{reviewId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getReviewMediaAccess": {
+      "path": "/api/v1/admin/reviews/{reviewId}/media/{assetId}/access",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "MEDIA_NOT_READY"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "decideReview": {
+      "path": "/api/v1/admin/reviews/{reviewId}/decisions",
+      "method": "post",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "REVIEW_VERSION_CONFLICT",
+          "CONTENT_VERSION_CONFLICT",
+          "REVIEW_NOT_PENDING",
+          "MEDIA_NOT_READY",
+          "CONTENT_NOT_EDITABLE",
+          "IDEMPOTENCY_KEY_REUSED",
+          "REQUEST_IN_PROGRESS"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "cancelMyReview": {
+      "path": "/api/v1/creator/contents/{contentId}/reviews/{reviewId}/cancellation",
+      "method": "put",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "403": [
+          "PERMISSION_DENIED",
+          "ACCOUNT_RESTRICTED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "409": [
+          "CONTENT_VERSION_CONFLICT",
+          "REVIEW_VERSION_CONFLICT",
+          "REVIEW_NOT_PENDING"
+        ],
+        "413": [
+          "PAYLOAD_TOO_LARGE"
+        ],
+        "415": [
+          "UNSUPPORTED_MEDIA_TYPE"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "getPublicContent": {
+      "path": "/api/v1/contents/{contentId}",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "404": [
+          "RESOURCE_NOT_FOUND"
+        ],
+        "422": [
+          "VALIDATION_ERROR"
+        ],
+        "429": [
+          "RATE_LIMITED"
+        ],
+        "500": [
+          "INTERNAL_ERROR"
+        ],
+        "503": [
+          "DEPENDENCY_UNAVAILABLE"
+        ]
+      }
+    },
+    "listPublicContents": {
+      "path": "/api/v1/contents",
+      "method": "get",
+      "responses": {
+        "200": [],
+        "400": [
+          "MALFORMED_REQUEST",
+          "CURSOR_INVALID"
+        ],
+        "401": [
+          "AUTHENTICATION_REQUIRED"
+        ],
+        "410": [
+          "CURSOR_EXPIRED"
         ],
         "422": [
           "VALIDATION_ERROR"

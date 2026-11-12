@@ -1,5 +1,7 @@
 package com.freecontent.community.media.service.transaction;
 
+import com.freecontent.community.user.service.AccountAccessService;
+import com.freecontent.community.user.model.AccountSnapshot;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.media.dto.TaskReceipt;
@@ -7,8 +9,6 @@ import com.freecontent.community.media.entity.*;
 import com.freecontent.community.media.mapper.*;
 import com.freecontent.community.media.storage.UploadObjectInspector.StoredObject;
 import com.freecontent.community.media.storage.UploadSigner;
-import com.freecontent.community.user.entity.UserAccount;
-import com.freecontent.community.user.mapper.UserAccountMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
@@ -17,7 +17,7 @@ import java.util.*;
 /** 账号→幂等记录→会话→素材；存储网络检查在claim与finish两个短事务之间。 */
 @Service
 public class UploadCompletionTransactionService {
-    private final UserAccountMapper users;
+    private final AccountAccessService accounts;
     private final MediaUploadMapper uploads;
     private final MediaAssetMapper assets;
     private final UploadCompletionRequestMapper requests;
@@ -25,9 +25,9 @@ public class UploadCompletionTransactionService {
     private final UploadSigner signer;
     private final Clock clock;
 
-    public UploadCompletionTransactionService(UserAccountMapper users, MediaUploadMapper uploads, MediaAssetMapper assets,
+    public UploadCompletionTransactionService(AccountAccessService accounts, MediaUploadMapper uploads, MediaAssetMapper assets,
             UploadCompletionRequestMapper requests, MediaProcessingTaskMapper tasks, UploadSigner signer, Clock clock) {
-        this.users = users; this.uploads = uploads; this.assets = assets;
+        this.accounts = accounts; this.uploads = uploads; this.assets = assets;
         this.requests = requests; this.tasks = tasks; this.signer = signer; this.clock = clock;
     }
 
@@ -129,11 +129,11 @@ public class UploadCompletionTransactionService {
     }
 
     private String authorize(SessionPrincipal principal) {
-        UserAccount user = users.findByIdForUpdate(principal.user().id());
-        if (user == null || user.getAuthVersion() == null || user.getAuthVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        if (user.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(user.getEmailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备上传完成权限");
-        return user.getId();
+        AccountSnapshot user = accounts.findByIdForUpdate(principal.user().id());
+        if (user == null || user.authVersion() == null || user.authVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        if (!user.active()) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
+        if (!Boolean.TRUE.equals(user.emailVerified())) throw new BusinessException(ErrorCode.PERMISSION_DENIED, "当前账号不具备上传完成权限");
+        return user.id();
     }
 
     private BusinessException conflict(int version) { return new BusinessException(ErrorCode.UPLOAD_STATE_CONFLICT, "上传状态、版本或存储结果不满足完成条件，请重新查询", version); }

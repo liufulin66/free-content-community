@@ -2,6 +2,7 @@ package com.freecontent.community.media.storage;
 
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.media.config.StorageProperties;
+import com.freecontent.community.media.entity.MediaAsset;
 import io.minio.*;
 import jakarta.annotation.PreDestroy;
 import okhttp3.OkHttpClient;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import java.util.concurrent.TimeUnit;
+import java.util.Locale;
 
 /** 网络HEAD位于内容授权事务之外；只检查已绑定结果对象，不将源文件提升为READY。 */
 @Component
@@ -25,6 +27,16 @@ public class MediaObjectReader implements AutoCloseable {
     }
 
     public record ObjectReference(String assetId,String ownerId,String key,String etag,String storageId,String contentType,long sizeBytes) {
+        /** 本人和后台预览共用结果对象校验；调用方先完成授权、引用及READY检查。 */
+        public static ObjectReference fromAsset(String assetId, String owner, MediaAsset asset, StorageProperties storage) {
+            if (asset.getActualContentType() == null || asset.getActualSizeBytes() == null) throw unavailable();
+            String prefix = asset.getScene().equals("CONTENT_IMAGE") ? "image/" : "video/";
+            if (!asset.getActualContentType().toLowerCase(Locale.ROOT).startsWith(prefix)) throw unavailable();
+            var result = new ObjectReference(assetId, owner, asset.getReadyObjectKey(), asset.getReadyObjectEtag(),
+                    asset.getReadyStorageId(), asset.getActualContentType(), asset.getActualSizeBytes());
+            result.requireStorage(storage); return result;
+        }
+
         public void requireStorage(StorageProperties storage) {
             if (assetId == null || !assetId.matches("[A-Za-z0-9_-]{1,64}") || ownerId == null || !ownerId.matches("[A-Za-z0-9_-]{1,64}")
                     || key == null || etag == null || etag.isBlank() || !storage.identity().equals(storageId)

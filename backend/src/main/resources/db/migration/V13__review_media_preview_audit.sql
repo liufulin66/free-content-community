@@ -1,0 +1,22 @@
+CREATE TABLE content_review_media_preview_audit (
+    id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    actor_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    review_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    content_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    revision_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    asset_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    action VARCHAR(40) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    request_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    occurred_at DATETIME(6) NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_review_media_preview_actor (actor_id,occurred_at,id),
+    KEY idx_review_media_preview_target (review_id,revision_id,asset_id),
+    CONSTRAINT fk_review_media_preview_actor FOREIGN KEY (actor_id) REFERENCES app_user(id),
+    CONSTRAINT fk_review_media_preview_review FOREIGN KEY (review_id,content_id) REFERENCES content_review(id,content_id),
+    CONSTRAINT fk_review_media_preview_content FOREIGN KEY (content_id) REFERENCES community_content(id),
+    CONSTRAINT fk_review_media_preview_revision FOREIGN KEY (revision_id,content_id) REFERENCES content_revision(id,content_id),
+    CONSTRAINT fk_review_media_preview_asset FOREIGN KEY (asset_id) REFERENCES media_asset(id),
+    CONSTRAINT chk_review_media_preview_action CHECK (action='ADMIN_REVIEW_MEDIA_PREVIEW'),
+    CONSTRAINT chk_review_media_preview_expiry CHECK (expires_at>occurred_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

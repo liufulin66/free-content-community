@@ -5,8 +5,10 @@ import com.freecontent.community.auth.config.SecurityConfiguration;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.auth.service.SessionAuthenticationService;
-import com.freecontent.community.media.config.UploadCompletionConfiguration;
 import com.freecontent.community.media.service.UploadCompletionService;
+import com.freecontent.community.media.config.UploadCompletionProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.TestConfiguration;
 import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.model.UserRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,8 +30,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(UploadCompletionController.class)
-@Import({SecurityConfiguration.class, UploadCompletionConfiguration.class})
+@Import({SecurityConfiguration.class, UploadCompletionEndpointTest.CompletionConfiguration.class})
 class UploadCompletionEndpointTest {
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(UploadCompletionProperties.class)
+    static class CompletionConfiguration { }
     private static final String TOKEN = "a".repeat(43);
     @Autowired private MockMvc mvc;
     @MockitoBean private SessionAuthenticationService authentication;

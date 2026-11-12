@@ -29,9 +29,11 @@ public class AdminAuthorizationManager implements AuthorizationManager<RequestAu
             new Rule(HttpMethod.POST, "/api/v1/admin/tags", Set.of(UserRole.ADMIN)),
             new Rule(HttpMethod.GET, "/api/v1/admin/tags", Set.of(UserRole.ADMIN)),
             new Rule(HttpMethod.PATCH, "/api/v1/admin/tags/{tagId}", Set.of(UserRole.ADMIN)),
-            new Rule(HttpMethod.GET, "/api/v1/admin/tags/{tagId}", Set.of(UserRole.ADMIN))
-            // 新增后台接口时在此登记，例如：
-            // new Rule(HttpMethod.GET, "/api/v1/admin/reviews/**", Set.of(UserRole.MODERATOR, UserRole.ADMIN)),
+            new Rule(HttpMethod.GET, "/api/v1/admin/tags/{tagId}", Set.of(UserRole.ADMIN)),
+            new Rule(HttpMethod.GET, "/api/v1/admin/reviews", Set.of(UserRole.MODERATOR, UserRole.ADMIN)),
+            new Rule(HttpMethod.GET, "/api/v1/admin/reviews/{reviewId}", Set.of(UserRole.MODERATOR, UserRole.ADMIN)),
+            new Rule(HttpMethod.GET, "/api/v1/admin/reviews/{reviewId}/media/{assetId}/access", Set.of(UserRole.MODERATOR, UserRole.ADMIN)),
+            new Rule(HttpMethod.POST, "/api/v1/admin/reviews/{reviewId}/decisions", Set.of(UserRole.MODERATOR, UserRole.ADMIN))
     );
 
     @Override

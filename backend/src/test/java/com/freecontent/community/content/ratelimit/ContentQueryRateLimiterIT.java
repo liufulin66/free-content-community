@@ -1,9 +1,11 @@
 package com.freecontent.community.content.ratelimit;
 
+import com.freecontent.community.content.workspace.ratelimit.ContentCreationRateLimiter;
+
 import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.content.config.ContentQueryProperties;
-import com.freecontent.community.content.config.ContentCreationProperties;
+import com.freecontent.community.content.workspace.config.ContentCreationProperties;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

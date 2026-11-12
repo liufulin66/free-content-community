@@ -1,13 +1,13 @@
 package com.freecontent.community.tag.service.transaction;
 
+import com.freecontent.community.user.service.AccountAccessService;
+import com.freecontent.community.user.model.AccountSnapshot;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.tag.dto.TagView;
 import com.freecontent.community.tag.entity.*;
 import com.freecontent.community.tag.mapper.*;
 import com.freecontent.community.tag.model.TagStatus;
-import com.freecontent.community.user.entity.UserAccount;
-import com.freecontent.community.user.mapper.*;
 import com.freecontent.community.user.model.UserRole;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -18,14 +18,13 @@ import java.util.*;
 
 @Service
 public class TagCreationTransactionService {
-    private final UserAccountMapper users;
-    private final UserRoleMapper roles;
+    private final AccountAccessService accounts;
     private final TagMapper tags;
     private final TagCreationRequestMapper requests;
     private final Clock clock;
-    public TagCreationTransactionService(UserAccountMapper users, UserRoleMapper roles, TagMapper tags,
+    public TagCreationTransactionService(AccountAccessService accounts, TagMapper tags,
                                          TagCreationRequestMapper requests, Clock clock) {
-        this.users = users; this.roles = roles; this.tags = tags; this.requests = requests; this.clock = clock;
+        this.accounts = accounts; this.tags = tags; this.requests = requests; this.clock = clock;
     }
 
     public record Input(String name, String description, TagStatus status) { }
@@ -78,13 +77,13 @@ public class TagCreationTransactionService {
     public void release(Claim claim) { requests.release(claim.request().getId(), claim.request().getLeaseToken()); }
 
     private String authorize(SessionPrincipal principal) {
-        UserAccount user = users.findByIdForUpdate(principal.user().id());
-        if (user == null || user.getAuthVersion() == null || user.getAuthVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        if (user.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(user.getEmailVerified()) || !roles.findRolesForShare(user.getId()).contains(UserRole.ADMIN)) {
+        AccountSnapshot user = accounts.findByIdForUpdate(principal.user().id());
+        if (user == null || user.authVersion() == null || user.authVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        if (!user.active()) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
+        if (!Boolean.TRUE.equals(user.emailVerified()) || !accounts.findRolesForShare(user.id()).contains(UserRole.ADMIN)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "需要管理员的tag:manage权限");
         }
-        return user.getId();
+        return user.id();
     }
     private BusinessException inProgress(long seconds) { return new BusinessException(ErrorCode.REQUEST_IN_PROGRESS, "相同标签创建请求正在处理", null, seconds, List.of()); }
     private LocalDateTime now() { return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC); }

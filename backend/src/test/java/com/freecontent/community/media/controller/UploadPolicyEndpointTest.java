@@ -7,7 +7,9 @@ import com.freecontent.community.auth.security.TokenDigest;
 import com.freecontent.community.auth.service.SessionAuthenticationService;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
-import com.freecontent.community.media.config.UploadPolicyConfiguration;
+import com.freecontent.community.media.config.UploadPolicyProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.TestConfiguration;
 import com.freecontent.community.media.service.impl.UploadPolicyServiceImpl;
 import com.freecontent.community.user.dto.CurrentUser;
 import com.freecontent.community.user.entity.UserAccount;
@@ -28,7 +30,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(MediaController.class)
-@Import({SecurityConfiguration.class, UploadPolicyConfiguration.class, UploadPolicyServiceImpl.class})
+@Import({SecurityConfiguration.class, UploadPolicyEndpointTest.PolicyConfiguration.class, UploadPolicyServiceImpl.class})
 @TestPropertySource(properties = {
         "app.media.upload-policy.max-image-bytes=2097152",
         "app.media.upload-policy.max-video-bytes=4294967296",
@@ -116,4 +118,7 @@ class UploadPolicyEndpointTest {
         if (blocked) account.setAccountStatus(UserAccount.Status.WRITE_BLOCKED);
         return new SessionPrincipal("session1", CurrentUser.from(account, List.of(UserRole.USER)), TokenDigest.sha256(TOKEN), 1L);
     }
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(UploadPolicyProperties.class)
+    static class PolicyConfiguration { }
 }

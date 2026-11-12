@@ -60,6 +60,39 @@ mybatis-plus:
 
 app:
   content:
+    public-media-access:
+      read-url-ttl-seconds: ${CONTENT_PUBLIC_MEDIA_ACCESS_READ_URL_TTL_SECONDS:300}
+      ip-per-minute-limit: ${CONTENT_PUBLIC_MEDIA_ACCESS_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_PUBLIC_MEDIA_ACCESS_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_PUBLIC_MEDIA_ACCESS_REDIS_KEY_PREFIX:fc:content:}
+    public-cursor:
+      ttl-seconds: ${CONTENT_PUBLIC_CURSOR_TTL_SECONDS:900}
+      key-base64: ${CONTENT_PUBLIC_CURSOR_KEY_BASE64}
+    public-query:
+      ip-per-minute-limit: ${CONTENT_PUBLIC_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_PUBLIC_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_PUBLIC_QUERY_REDIS_KEY_PREFIX:fc:content:}
+    review-cancellation:
+      ip-per-minute-limit: ${CONTENT_REVIEW_CANCELLATION_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_REVIEW_CANCELLATION_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_REVIEW_CANCELLATION_REDIS_KEY_PREFIX:fc:content:}
+    review-decision:
+      ip-per-minute-limit: ${CONTENT_REVIEW_DECISION_IP_PER_MINUTE_LIMIT:60}
+      user-hourly-limit: ${CONTENT_REVIEW_DECISION_USER_HOURLY_LIMIT:100}
+      redis-key-prefix: ${CONTENT_REVIEW_DECISION_REDIS_KEY_PREFIX:fc:content:}
+    admin-review-media-preview:
+      read-url-ttl-seconds: ${CONTENT_ADMIN_REVIEW_MEDIA_PREVIEW_READ_URL_TTL_SECONDS:300}
+      ip-per-minute-limit: ${CONTENT_ADMIN_REVIEW_MEDIA_PREVIEW_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_ADMIN_REVIEW_MEDIA_PREVIEW_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_ADMIN_REVIEW_MEDIA_PREVIEW_REDIS_KEY_PREFIX:fc:content:}
+    admin-review-query:
+      ip-per-minute-limit: ${CONTENT_ADMIN_REVIEW_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${CONTENT_ADMIN_REVIEW_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${CONTENT_ADMIN_REVIEW_QUERY_REDIS_KEY_PREFIX:fc:content:}
+    review-submission:
+      ip-per-minute-limit: ${CONTENT_REVIEW_SUBMISSION_IP_PER_MINUTE_LIMIT:60}
+      user-hourly-limit: ${CONTENT_REVIEW_SUBMISSION_USER_HOURLY_LIMIT:100}
+      redis-key-prefix: ${CONTENT_REVIEW_SUBMISSION_REDIS_KEY_PREFIX:fc:content:}
     media-preview:
       read-url-ttl-seconds: ${CONTENT_MEDIA_PREVIEW_READ_URL_TTL_SECONDS:300}
       ip-per-minute-limit: ${CONTENT_MEDIA_PREVIEW_IP_PER_MINUTE_LIMIT:120}
@@ -145,6 +178,10 @@ app:
       max-part-count: ${MEDIA_MAX_PART_COUNT:10000}
       upload-url-ttl-seconds: ${MEDIA_UPLOAD_URL_TTL_SECONDS:600}
   user:
+    public-query:
+      ip-per-minute-limit: ${USER_PUBLIC_QUERY_IP_PER_MINUTE_LIMIT:120}
+      user-per-minute-limit: ${USER_PUBLIC_QUERY_USER_PER_MINUTE_LIMIT:60}
+      redis-key-prefix: ${USER_PUBLIC_QUERY_REDIS_KEY_PREFIX:fc:user:}
     profile-update:
       ip-per-minute-limit: ${PROFILE_UPDATE_IP_PER_MINUTE_LIMIT:30}
       user-hourly-limit: ${PROFILE_UPDATE_USER_HOURLY_LIMIT:20}

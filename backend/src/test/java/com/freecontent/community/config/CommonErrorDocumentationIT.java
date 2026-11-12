@@ -36,8 +36,15 @@ class CommonErrorDocumentationIT {
         var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/v3/api-docs")).GET().build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString()); assertEquals(200, response.statusCode());
         for (String[] endpoint : List.of(new String[]{"/api/v1/admin/tags", "post", "201"},
+                new String[]{"/api/v1/admin/reviews", "get", "200"},
+                new String[]{"/api/v1/admin/reviews/{reviewId}", "get", "200"},
+                new String[]{"/api/v1/admin/reviews/{reviewId}/media/{assetId}/access", "get", "200"},
+                new String[]{"/api/v1/admin/reviews/{reviewId}/decisions", "post", "200"},
+                new String[]{"/api/v1/creator/contents/{contentId}/reviews/{reviewId}/cancellation", "put", "200"},
                 new String[]{"/api/v1/media/uploads/{uploadId}/completion", "post", "202"},
                 new String[]{"/api/v1/creator/contents", "post", "201"},
+                new String[]{"/api/v1/creator/contents/{contentId}/reviews", "post", "201"},
+                new String[]{"/api/v1/creator/contents/{contentId}/reviews/{reviewId}", "get", "200"},
                 new String[]{"/api/v1/creator/contents/{contentId}", "get", "200"},
                 new String[]{"/api/v1/creator/contents/{contentId}/draft", "patch", "200"},
                 new String[]{"/api/v1/creator/contents", "get", "200"},

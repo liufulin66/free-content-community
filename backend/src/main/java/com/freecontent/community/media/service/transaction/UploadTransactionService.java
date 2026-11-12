@@ -1,11 +1,11 @@
 package com.freecontent.community.media.service.transaction;
 
+import com.freecontent.community.user.service.AccountAccessService;
+import com.freecontent.community.user.model.AccountSnapshot;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.error.*;
 import com.freecontent.community.media.entity.*;
 import com.freecontent.community.media.mapper.*;
-import com.freecontent.community.user.entity.UserAccount;
-import com.freecontent.community.user.mapper.UserAccountMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.Objects;
@@ -15,21 +15,21 @@ import java.time.*;
 
 @Service
 public class UploadTransactionService {
-    private final UserAccountMapper users;
+    private final AccountAccessService accounts;
     private final MediaAssetMapper assets;
     private final MediaUploadMapper uploads;
     private final UploadRequestMapper requests;
     private final Clock clock;
 
-    public UploadTransactionService(UserAccountMapper users, MediaAssetMapper assets, MediaUploadMapper uploads, UploadRequestMapper requests, Clock clock) {
-        this.users=users; this.assets=assets; this.uploads=uploads; this.requests=requests; this.clock=clock;
+    public UploadTransactionService(AccountAccessService accounts, MediaAssetMapper assets, MediaUploadMapper uploads, UploadRequestMapper requests, Clock clock) {
+        this.accounts = accounts; this.assets=assets; this.uploads=uploads; this.requests=requests; this.clock=clock;
     }
 
     public record Claim(UploadRequestRecord request, MediaUpload replay, MediaAsset replayAsset) { }
 
     @Transactional
     public Claim claim(SessionPrincipal principal, String keyHash, String fingerprint) {
-        String owner = authorize(principal).getId();
+        String owner = authorize(principal).id();
         LocalDateTime now = now();
         UploadRequestRecord record = requests.lockByKey(owner, keyHash);
         if (record != null && !record.getExpiresAt().isAfter(now)) {
@@ -65,7 +65,7 @@ public class UploadTransactionService {
 
     @Transactional
     public void complete(Claim claim, SessionPrincipal principal, MediaAsset asset, MediaUpload upload) {
-        String owner = authorize(principal).getId();
+        String owner = authorize(principal).id();
         UploadRequestRecord current = requests.lockByKey(owner, claim.request().getKeyHash());
         if (current == null || !Objects.equals(current.getId(), claim.request().getId())
                 || !"PROCESSING".equals(current.getState()) || !Objects.equals(current.getLeaseToken(), claim.request().getLeaseToken())
@@ -78,11 +78,11 @@ public class UploadTransactionService {
     @Transactional
     public void release(Claim claim) { requests.release(claim.request().getId(), claim.request().getLeaseToken()); }
 
-    private UserAccount authorize(SessionPrincipal principal) {
-        UserAccount user = users.findByIdForUpdate(principal.user().id());
-        if (user == null || user.getAuthVersion() == null || user.getAuthVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        if (user.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(user.getEmailVerified())) throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
+    private AccountSnapshot authorize(SessionPrincipal principal) {
+        AccountSnapshot user = accounts.findByIdForUpdate(principal.user().id());
+        if (user == null || user.authVersion() == null || user.authVersion() != principal.authVersion()) throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        if (!user.active()) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
+        if (!Boolean.TRUE.equals(user.emailVerified())) throw new BusinessException(ErrorCode.EMAIL_VERIFICATION_REQUIRED);
         return user;
     }
 

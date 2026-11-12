@@ -1,5 +1,7 @@
 package com.freecontent.community.tag.service.transaction;
 
+import com.freecontent.community.user.service.AccountAccessService;
+import com.freecontent.community.user.model.AccountSnapshot;
 import com.freecontent.community.auth.security.SessionPrincipal;
 import com.freecontent.community.common.error.BusinessException;
 import com.freecontent.community.common.error.ErrorCode;
@@ -7,9 +9,6 @@ import com.freecontent.community.tag.dto.TagUpdateRequest;
 import com.freecontent.community.tag.dto.TagView;
 import com.freecontent.community.tag.mapper.TagMapper;
 import com.freecontent.community.tag.entity.TagEntity;
-import com.freecontent.community.user.entity.UserAccount;
-import com.freecontent.community.user.mapper.UserAccountMapper;
-import com.freecontent.community.user.mapper.UserRoleMapper;
 import com.freecontent.community.user.model.UserRole;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DuplicateKeyException;
@@ -24,14 +23,12 @@ import java.util.Objects;
 @Service
 public class TagUpdateTransactionService {
     private final TagMapper tags;
-    private final UserAccountMapper users;
-    private final UserRoleMapper roles;
+    private final AccountAccessService accounts;
     private final Clock clock;
 
-    public TagUpdateTransactionService(TagMapper tags, UserAccountMapper users, UserRoleMapper roles, Clock clock) {
+    public TagUpdateTransactionService(TagMapper tags, AccountAccessService accounts, Clock clock) {
         this.tags = tags;
-        this.users = users;
-        this.roles = roles;
+        this.accounts = accounts;
         this.clock = clock;
     }
 
@@ -61,12 +58,12 @@ public class TagUpdateTransactionService {
     }
 
     private void authorize(SessionPrincipal principal) {
-        UserAccount account = users.findByIdForShare(principal.user().id());
-        if (account == null || account.getAuthVersion() == null || account.getAuthVersion() != principal.authVersion()) {
+        AccountSnapshot account = accounts.findByIdForShare(principal.user().id());
+        if (account == null || account.authVersion() == null || account.authVersion() != principal.authVersion()) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
-        if (account.getAccountStatus() != UserAccount.Status.ACTIVE) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
-        if (!Boolean.TRUE.equals(account.getEmailVerified()) || !roles.findRolesForShare(account.getId()).contains(UserRole.ADMIN)) {
+        if (!account.active()) throw new BusinessException(ErrorCode.ACCOUNT_RESTRICTED);
+        if (!Boolean.TRUE.equals(account.emailVerified()) || !accounts.findRolesForShare(account.id()).contains(UserRole.ADMIN)) {
             throw new BusinessException(ErrorCode.PERMISSION_DENIED, "需要管理员的tag:manage权限");
         }
     }

@@ -1,0 +1,447 @@
+{
+  "PublicContent": {
+    "type": "object",
+    "description": "",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "内容ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "kind": {
+        "type": "string",
+        "description": "内容类型；创建后不能修改。",
+        "enum": [
+          "ARTICLE",
+          "VIDEO"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "description": "已审核发布的标题",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "summary": {
+        "type": "string",
+        "description": "服务端生成的摘要",
+        "maxLength": 300
+      },
+      "author": {
+        "$ref": "#/components/schemas/PublicUser"
+      },
+      "coverAssetId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "封面素材ID",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Tag"
+        },
+        "description": "标签",
+        "maxItems": 5
+      },
+      "firstPublishedAt": {
+        "type": "string",
+        "description": "首次发布时间；后续版本发布不改变此排序字段",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      },
+      "publishedAt": {
+        "type": "string",
+        "description": "当前公开版本发布时间",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      },
+      "publishedRevisionId": {
+        "type": "string",
+        "description": "当前公开版本ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "likeCount": {
+        "type": "integer",
+        "description": "点赞展示计数，允许短暂延迟",
+        "minimum": 0
+      },
+      "commentCount": {
+        "type": "integer",
+        "description": "可见评论展示计数",
+        "minimum": 0
+      },
+      "viewerHasLiked": {
+        "type": "boolean",
+        "description": "当前登录用户是否已点赞；游客为false"
+      },
+      "viewerHasBookmarked": {
+        "type": "boolean",
+        "description": "当前登录用户是否已收藏；游客为false"
+      },
+      "bodyMarkdown": {
+        "type": "string",
+        "description": "经过发布审核的Markdown正文；客户端必须使用安全渲染配置。"
+      },
+      "imageAssetIds": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "description": "资源ID",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "description": "公开版本引用的图片素材",
+        "uniqueItems": true,
+        "maxItems": 50
+      },
+      "videoAssetId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "公开版本引用的视频素材",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "title",
+      "summary",
+      "author",
+      "coverAssetId",
+      "tags",
+      "firstPublishedAt",
+      "publishedAt",
+      "publishedRevisionId",
+      "likeCount",
+      "commentCount",
+      "viewerHasLiked",
+      "viewerHasBookmarked",
+      "bodyMarkdown",
+      "imageAssetIds",
+      "videoAssetId"
+    ],
+    "additionalProperties": true
+  },
+  "PublicUser": {
+    "type": "object",
+    "description": "",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "用户ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "displayName": {
+        "type": "string",
+        "description": "公开昵称",
+        "maxLength": 40
+      },
+      "bio": {
+        "type": "string",
+        "description": "个人简介",
+        "maxLength": 500
+      },
+      "avatarUrl": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "头像的受控访问地址",
+            "format": "uri"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "createdAt": {
+        "type": "string",
+        "description": "注册时间",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      },
+      "publishedContentCount": {
+        "type": "integer",
+        "description": "当前公开内容数",
+        "minimum": 0
+      },
+      "followerCount": {
+        "type": "integer",
+        "description": "当前关注者数",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "id",
+      "displayName",
+      "bio",
+      "avatarUrl",
+      "createdAt",
+      "publishedContentCount",
+      "followerCount"
+    ],
+    "additionalProperties": true
+  },
+  "Tag": {
+    "type": "object",
+    "description": "",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "标签ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "name": {
+        "type": "string",
+        "description": "标签名",
+        "minLength": 1,
+        "maxLength": 30
+      },
+      "description": {
+        "type": "string",
+        "description": "标签说明",
+        "maxLength": 200
+      },
+      "status": {
+        "type": "string",
+        "description": "标签状态",
+        "enum": [
+          "ACTIVE",
+          "DISABLED"
+        ]
+      },
+      "version": {
+        "type": "integer",
+        "description": "资源的当前版本。只有成功改变业务状态时递增；浏览量等统计不改变内容版本。",
+        "minimum": 1,
+        "maximum": 2147483647
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "description",
+      "status",
+      "version"
+    ],
+    "additionalProperties": true
+  },
+  "ContentPage": {
+    "type": "object",
+    "description": "",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/ContentSummary"
+        },
+        "description": "当前批记录"
+      },
+      "nextCursor": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "下一批的不透明游标；没有下一批时为null。"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "hasMore": {
+        "type": "boolean",
+        "description": "是否还有下一批"
+      },
+      "snapshotAt": {
+        "type": "string",
+        "description": "本次连续浏览的快照上界时间",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      }
+    },
+    "required": [
+      "items",
+      "nextCursor",
+      "hasMore",
+      "snapshotAt"
+    ],
+    "additionalProperties": true,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "hasMore": {
+              "const": true
+            }
+          },
+          "required": [
+            "hasMore"
+          ]
+        },
+        "then": {
+          "properties": {
+            "nextCursor": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "nextCursor": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "ContentSummary": {
+    "type": "object",
+    "description": "",
+    "properties": {
+      "id": {
+        "type": "string",
+        "description": "内容ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "kind": {
+        "type": "string",
+        "description": "内容类型；创建后不能修改。",
+        "enum": [
+          "ARTICLE",
+          "VIDEO"
+        ]
+      },
+      "title": {
+        "type": "string",
+        "description": "已审核发布的标题",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "summary": {
+        "type": "string",
+        "description": "服务端生成的摘要",
+        "maxLength": 300
+      },
+      "author": {
+        "$ref": "#/components/schemas/PublicUser"
+      },
+      "coverAssetId": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "封面素材ID",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Tag"
+        },
+        "description": "标签",
+        "maxItems": 5
+      },
+      "firstPublishedAt": {
+        "type": "string",
+        "description": "首次发布时间；后续版本发布不改变此排序字段",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      },
+      "publishedAt": {
+        "type": "string",
+        "description": "当前公开版本发布时间",
+        "format": "date-time",
+        "examples": [
+          "2026-11-03T08:00:00Z"
+        ]
+      },
+      "publishedRevisionId": {
+        "type": "string",
+        "description": "当前公开版本ID",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "likeCount": {
+        "type": "integer",
+        "description": "点赞展示计数，允许短暂延迟",
+        "minimum": 0
+      },
+      "commentCount": {
+        "type": "integer",
+        "description": "可见评论展示计数",
+        "minimum": 0
+      },
+      "viewerHasLiked": {
+        "type": "boolean",
+        "description": "当前登录用户是否已点赞；游客为false"
+      },
+      "viewerHasBookmarked": {
+        "type": "boolean",
+        "description": "当前登录用户是否已收藏；游客为false"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "title",
+      "summary",
+      "author",
+      "coverAssetId",
+      "tags",
+      "firstPublishedAt",
+      "publishedAt",
+      "publishedRevisionId",
+      "likeCount",
+      "commentCount",
+      "viewerHasLiked",
+      "viewerHasBookmarked"
+    ],
+    "additionalProperties": true
+  }
+}
